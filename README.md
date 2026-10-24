@@ -10,6 +10,21 @@ Built-in skills run locally and instantly. Anything they don't cover goes to
 Claude (if you've set an API key), which replies in short sentences meant to be
 spoken aloud and remembers the conversation.
 
+## iPad and phone version (web)
+
+`docs/index.html` is a standalone web version: tap the circle and talk, and
+Jarvis answers out loud. It uses the browser's own speech recognition and
+voice, so it works in Safari on iPad and iPhone and in Chrome on a computer.
+
+Host it free with GitHub Pages: in the repo's **Settings → Pages**, set
+**Source** to *Deploy from a branch*, pick `main` and the `/docs` folder, and
+save. After a minute it's live at
+`https://importauto321-lab.github.io/Jarvis/`.
+
+Built-in commands work right away. For general questions, tap **Settings** and
+paste an Anthropic API key; it's stored only in that browser. Turn on
+**Keep listening after each answer** for a hands-free back-and-forth.
+
 ## Built-in skills
 
 | Say | Does |
