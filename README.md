@@ -29,6 +29,34 @@ listening again by itself, so there's nothing to press. Tap the circle (or say
 "stop listening") to pause; it also pauses after a few quiet turns. Pick a
 voice under **Settings → Voice**; the choice is saved in that browser.
 
+### Gmail and Calendar setup
+
+The web version can check your calendar, add events, search and read your
+email, and send email. Adding an event or sending an email only happens after
+you say "yes" (or tap Yes).
+
+It signs in to Google with your own OAuth client ID. Create one once, in
+Safari or any browser:
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com), sign in,
+   and create a project (for example "Jarvis").
+2. Open **APIs & Services → Library** and enable **Gmail API** and
+   **Google Calendar API**.
+3. Open **Google Auth Platform** (OAuth consent screen). Choose **External**,
+   name the app "Jarvis", and enter your email where asked. Under
+   **Audience**, add your own Gmail address as a **test user**.
+4. Open **Clients → Create client**. Pick **Web application**. Under
+   **Authorized JavaScript origins**, add `https://importauto321-lab.github.io`.
+   Create it and copy the **Client ID** (it ends in
+   `.apps.googleusercontent.com`).
+5. In Jarvis, open **Settings**, paste the Client ID, tap **Save ID**, then
+   **Connect Google**. Google warns that the app isn't verified, because it's
+   your own private app: tap **Continue** and allow access.
+
+Google's sign-in lasts about an hour. When it runs out, Jarvis asks you to tap
+**Connect Google** again. The sign-in stays in your browser; nothing is sent
+anywhere except Google and, for answering your questions, Anthropic's API.
+
 ## Built-in skills
 
 | Say | Does |

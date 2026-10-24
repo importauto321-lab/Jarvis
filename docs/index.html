@@ -117,6 +117,8 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; marg
 .msg.bot.pending { color: var(--muted); font-style: italic; }
 .msg a { color: inherit; font-weight: 700; }
 
+.confirm { display: flex; gap: 8px; margin-top: 8px; }
+.settings hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 4px 10px; }
 .chip {
   font: inherit; font-size: 0.88rem; color: var(--ink); background: var(--accent-soft);
@@ -170,6 +172,17 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
     <label class="check"><input id="handsFree" type="checkbox"> Keep listening after each answer</label>
     <div class="row">
       <button class="toggle" id="newChat" type="button">New conversation</button>
+    </div>
+    <hr>
+    <h2>Gmail and Calendar</h2>
+    <p id="googleStatus">Not connected. Paste your Google OAuth client ID, then tap Connect Google. <a href="https://github.com/importauto321-lab/Jarvis#gmail-and-calendar-setup" target="_blank" rel="noopener">Setup steps</a></p>
+    <div class="row">
+      <input id="googleClientId" type="text" autocomplete="off" placeholder="1234-abc.apps.googleusercontent.com" aria-label="Google OAuth client ID">
+      <button class="toggle" id="saveClientId" type="button">Save ID</button>
+    </div>
+    <div class="row">
+      <button class="send" id="connectGoogle" type="button">Connect Google</button>
+      <button class="toggle" id="disconnectGoogle" type="button">Disconnect</button>
     </div>
   </section>
 
@@ -481,12 +494,257 @@ function runSkills(command) {
   return null;
 }
 
+// ---------- Google: Gmail and Calendar ----------
+const GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/calendar.events",
+].join(" ");
+let tokenClient = null;
+let googleToken = null; // { access_token, expires_at }
+try { googleToken = JSON.parse(store.get("googleToken", "null")); } catch {}
+
+const googleConnected = () => !!googleToken && googleToken.expires_at > Date.now() + 30000;
+
+function renderGoogleStatus(note) {
+  const el = $("googleStatus");
+  if (note) { el.textContent = note; return; }
+  if (googleConnected()) el.textContent = "Connected. Ask about your email or calendar.";
+  else if (store.get("googleClientId")) el.textContent = googleToken ? "Sign-in expired. Tap Connect Google." : "Client ID saved. Tap Connect Google.";
+  else {
+    el.textContent = "Not connected. Paste your Google OAuth client ID, then tap Connect Google. ";
+    const a = document.createElement("a");
+    a.href = "https://github.com/importauto321-lab/Jarvis#gmail-and-calendar-setup";
+    a.target = "_blank"; a.rel = "noopener"; a.textContent = "Setup steps";
+    el.appendChild(a);
+  }
+}
+
+function loadGoogleScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tag = document.createElement("script");
+    tag.src = "https://accounts.google.com/gsi/client";
+    tag.async = true;
+    tag.onload = resolve;
+    tag.onerror = () => reject(new Error("Couldn't load Google sign-in"));
+    document.head.appendChild(tag);
+  });
+}
+
+// Google's sign-in popup must open straight from a tap, so prepare the client before the tap.
+async function prepareGoogle() {
+  const clientId = store.get("googleClientId");
+  if (!clientId) return;
+  try {
+    await loadGoogleScript();
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: GOOGLE_SCOPES,
+      callback: (resp) => {
+        if (resp.error) { renderGoogleStatus("Google sign-in didn't finish: " + resp.error); return; }
+        googleToken = { access_token: resp.access_token, expires_at: Date.now() + resp.expires_in * 1000 };
+        store.set("googleToken", JSON.stringify(googleToken));
+        renderGoogleStatus();
+        addMsg("bot", "Google is connected. Ask me about your email or calendar.");
+      },
+      error_callback: (err) => renderGoogleStatus("Google sign-in was closed or blocked (" + (err?.type || "unknown") + ")."),
+    });
+  } catch {
+    tokenClient = null;
+    renderGoogleStatus("I couldn't load Google sign-in. Check your internet connection.");
+  }
+}
+
+class GoogleAuthError extends Error {}
+
+async function googleFetch(url, options = {}) {
+  if (!googleConnected()) throw new GoogleAuthError("not connected");
+  const res = await fetch(url, {
+    ...options,
+    headers: { Authorization: "Bearer " + googleToken.access_token, "Content-Type": "application/json", ...(options.headers || {}) },
+  });
+  if (res.status === 401) {
+    googleToken = null; store.set("googleToken", null); renderGoogleStatus();
+    throw new GoogleAuthError("expired");
+  }
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch {}
+    throw new Error(`Google returned ${res.status}${detail ? ": " + detail : ""}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
+const CALENDAR = "https://www.googleapis.com/calendar/v3/calendars/primary";
+
+function decodeBase64Url(data) {
+  const bin = atob(data.replace(/-/g, "+").replace(/_/g, "/"));
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+function encodeBase64Url(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function headerOf(msg, name) {
+  return msg.payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+}
+function bodyText(part) {
+  if (!part) return "";
+  if (part.mimeType === "text/plain" && part.body?.data) return decodeBase64Url(part.body.data);
+  for (const child of part.parts || []) { const t = bodyText(child); if (t) return t; }
+  if (part.mimeType === "text/html" && part.body?.data) {
+    return decodeBase64Url(part.body.data).replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  }
+  return "";
+}
+function encodeHeader(value) {
+  return /^[\x20-\x7e]*$/.test(value) ? value : "=?UTF-8?B?" + btoa(String.fromCharCode(...new TextEncoder().encode(value))) + "?=";
+}
+function spokenWhen(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString([], { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// Actions that change something wait here until the user says yes.
+let pending = null; // { summary, run }
+let pendingNote = "";
+
+const GOOGLE_TOOLS = [
+  {
+    name: "list_calendar_events",
+    description: "List events on the user's primary Google Calendar between two times. Returns title, start, end and location for each event.",
+    input_schema: {
+      type: "object",
+      properties: {
+        time_min: { type: "string", description: "Start of the range, RFC 3339 with offset, e.g. 2026-10-24T00:00:00-04:00" },
+        time_max: { type: "string", description: "End of the range, RFC 3339 with offset" },
+        query: { type: "string", description: "Optional words to search for in events" },
+      },
+      required: ["time_min", "time_max"],
+    },
+    async run({ time_min, time_max, query }) {
+      const params = new URLSearchParams({ timeMin: time_min, timeMax: time_max, singleEvents: "true", orderBy: "startTime", maxResults: "25" });
+      if (query) params.set("q", query);
+      const data = await googleFetch(`${CALENDAR}/events?${params}`);
+      return (data.items || []).map((e) => ({
+        id: e.id, title: e.summary || "(no title)",
+        start: e.start?.dateTime || e.start?.date, end: e.end?.dateTime || e.end?.date,
+        location: e.location || undefined,
+      }));
+    },
+  },
+  {
+    name: "create_calendar_event",
+    description: "Propose a new event on the user's primary Google Calendar. The event is only created after the user says yes, so after calling this, ask them to confirm.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        start: { type: "string", description: "RFC 3339 with offset" },
+        end: { type: "string", description: "RFC 3339 with offset; one hour after start if the user gave no length" },
+        location: { type: "string" },
+        description: { type: "string" },
+      },
+      required: ["title", "start", "end"],
+    },
+    async run({ title, start, end, location, description }) {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      pending = {
+        summary: `Add "${title}" on ${spokenWhen(start)}?`,
+        run: async () => {
+          await googleFetch(`${CALENDAR}/events`, {
+            method: "POST",
+            body: JSON.stringify({ summary: title, location, description, start: { dateTime: start, timeZone }, end: { dateTime: end, timeZone } }),
+          });
+          return { say: `Done. ${title} is on your calendar.`, note: `The user confirmed and the event "${title}" was created.` };
+        },
+      };
+      return "Waiting for the user to confirm. Ask them to say yes to add it, or no to cancel.";
+    },
+  },
+  {
+    name: "search_emails",
+    description: "Search the user's Gmail with Gmail search syntax (e.g. 'is:unread', 'from:amy newer_than:7d'). Returns id, sender, subject, date and a short snippet for each match, newest first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        max_results: { type: "integer", description: "1 to 10, default 5" },
+      },
+      required: ["query"],
+    },
+    async run({ query, max_results }) {
+      const n = Math.min(Math.max(Number(max_results) || 5, 1), 10);
+      const list = await googleFetch(`${GMAIL}/messages?${new URLSearchParams({ q: String(query), maxResults: String(n) })}`);
+      const ids = (list.messages || []).map((m) => m.id);
+      const metas = await Promise.all(ids.map((id) =>
+        googleFetch(`${GMAIL}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`)));
+      return metas.map((m) => ({ id: m.id, from: headerOf(m, "From"), subject: headerOf(m, "Subject"), date: headerOf(m, "Date"), snippet: m.snippet }));
+    },
+  },
+  {
+    name: "read_email",
+    description: "Read one email by the id from search_emails. Returns sender, recipients, subject, date and the plain-text body (cut to 4000 characters).",
+    input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    async run({ id }) {
+      const m = await googleFetch(`${GMAIL}/messages/${encodeURIComponent(String(id))}?format=full`);
+      return { from: headerOf(m, "From"), to: headerOf(m, "To"), subject: headerOf(m, "Subject"), date: headerOf(m, "Date"), body: bodyText(m.payload).slice(0, 4000) };
+    },
+  },
+  {
+    name: "send_email",
+    description: "Propose sending a plain-text email from the user's Gmail. Nothing is sent until the user says yes, so after calling this, read the recipient and a short summary back and ask them to confirm. Only use an exact email address the user gave or that appears in their email.",
+    input_schema: {
+      type: "object",
+      properties: { to: { type: "string" }, subject: { type: "string" }, body: { type: "string" } },
+      required: ["to", "subject", "body"],
+    },
+    async run({ to, subject, body }) {
+      if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(to))) throw new Error("That isn't a valid email address. Ask the user for the exact address.");
+      pending = {
+        summary: `Send an email to ${to} with the subject "${subject}"?`,
+        run: async () => {
+          const raw = [`To: ${to}`, `Subject: ${encodeHeader(subject)}`, "MIME-Version: 1.0",
+            "Content-Type: text/plain; charset=UTF-8", "", body].join("\r\n");
+          await googleFetch(`${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw: encodeBase64Url(raw) }) });
+          return { say: `Sent to ${to}.`, note: `The user confirmed and the email to ${to} was sent.` };
+        },
+      };
+      return "Waiting for the user to confirm. Ask them to say yes to send it, or no to cancel.";
+    },
+  },
+];
+
+async function runTool(block) {
+  const tool = GOOGLE_TOOLS.find((t) => t.name === block.name);
+  try {
+    if (!tool) throw new Error("Unknown tool " + block.name);
+    const result = await tool.run(block.input || {});
+    return { type: "tool_result", tool_use_id: block.id, content: typeof result === "string" ? result : JSON.stringify(result) };
+  } catch (err) {
+    const message = err instanceof GoogleAuthError
+      ? "Google sign-in has expired. Tell the user to open Settings and tap Connect Google."
+      : String(err.message || err);
+    return { type: "tool_result", tool_use_id: block.id, content: message, is_error: true };
+  }
+}
+
 // ---------- Claude for everything else ----------
 const SYSTEM = `You are ${NAME}, a friendly voice assistant. Your replies are read aloud by text-to-speech, ` +
   "so answer in one to three short, natural spoken sentences. Never use markdown, bullet points, " +
   "code blocks, emoji, or URLs. If a question needs a long answer, give the key point and offer to go deeper. " +
   "You speak through the device's speaker; if the user says they can't hear you, they mean your voice, " +
-  "so suggest turning the volume up and Silent Mode off. The page handles time, timers, notes and links itself.";
+  "so suggest turning the volume up and Silent Mode off. The page handles time, timers, notes and links itself.\n\n" +
+  "When you have Gmail and Calendar tools, use them to answer questions about the user's email and schedule. " +
+  "Summarize emails briefly instead of reading them word for word, and say times the way people speak them. " +
+  "Sending an email or adding an event only happens after the user says yes, so read back what you're about to do and ask. " +
+  "If you have no Gmail or Calendar tools and the user asks about email or their calendar, tell them to open Settings and tap Connect Google. " +
+  "Each user message starts with the current local time in brackets.";
+const MAX_TOOL_ROUNDS = 6;
 let messages = [];
 let clientPromise = null;
 
@@ -506,24 +764,48 @@ async function askClaude(question) {
   try { sdk = await getClient(apiKey); } catch { return "I couldn't load my language model. Check your internet connection."; }
   const { Anthropic, client } = sdk;
 
-  messages.push({ role: "user", content: question });
+  const now = new Date();
+  const offsetMin = -now.getTimezoneOffset();
+  const offset = (offsetMin >= 0 ? "+" : "-") + String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, "0") + ":" + String(Math.abs(offsetMin) % 60).padStart(2, "0");
+  const stamp = `[${now.toLocaleString([], { dateStyle: "full", timeStyle: "short" })}, ${Intl.DateTimeFormat().resolvedOptions().timeZone}, UTC${offset}]`;
+  const note = pendingNote ? ` (${pendingNote})` : "";
+  pendingNote = "";
+
+  const turnStart = messages.length;
+  messages.push({ role: "user", content: `${stamp}${note} ${question}` });
+  const tools = googleConnected() ? GOOGLE_TOOLS.map(({ name, description, input_schema }) => ({ name, description, input_schema })) : undefined;
   try {
-    const response = await client.beta.messages.create({
-      model: MODEL,
-      max_tokens: 16000,
-      system: SYSTEM,
-      messages,
-      output_config: { effort: "low" },
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-    });
-    if (response.stop_reason === "refusal") { messages.pop(); return "Sorry, I can't help with that one."; }
-    // Keep the full content (including thinking blocks) so the history stays append-only.
-    messages.push({ role: "assistant", content: response.content });
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
-    return text || "I'm not sure what to say to that.";
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const response = await client.beta.messages.create({
+        model: MODEL,
+        max_tokens: 16000,
+        system: SYSTEM,
+        messages,
+        ...(tools ? { tools } : {}),
+        output_config: { effort: "low" },
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+      });
+      if (response.stop_reason === "refusal") { messages.length = turnStart; pending = null; return "Sorry, I can't help with that one."; }
+      // Keep the full content (including thinking blocks) so the history stays append-only.
+      messages.push({ role: "assistant", content: response.content });
+      if (response.stop_reason === "tool_use") {
+        setState("thinking", "Checking Google");
+        const calls = response.content.filter((b) => b.type === "tool_use");
+        const results = await Promise.all(calls.map(runTool));
+        messages.push({ role: "user", content: results });
+        continue;
+      }
+      if (response.stop_reason === "max_tokens") { messages.length = turnStart; pending = null; return "That answer ran too long. Try asking for less."; }
+      const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
+      return text || "I'm not sure what to say to that.";
+    }
+    messages.length = turnStart;
+    pending = null;
+    return "That took too many steps. Try asking in a simpler way.";
   } catch (err) {
-    messages.pop();
+    messages.length = turnStart;
+    pending = null;
     if (err instanceof Anthropic.AuthenticationError) return "That API key didn't work. Check it in Settings.";
     if (err instanceof Anthropic.PermissionDeniedError) return "That API key isn't allowed to use this model.";
     if (err instanceof Anthropic.RateLimitError) return "I'm being rate limited. Try again in a moment.";
@@ -552,6 +834,32 @@ async function handle(raw) {
     addMsg("bot", msg); speak(msg); return;
   }
 
+  if (pending) {
+    const action = pending;
+    pending = null;
+    clearConfirmButtons();
+    if (/^(yes|yeah|yep|yup|sure|ok(ay)?|confirm|do it|go ahead|send it|add it|please do)\b/i.test(command)) {
+      busy = true; sendBtn.disabled = true;
+      setState("thinking", "Working");
+      let say;
+      try { const out = await action.run(); say = out.say; pendingNote = out.note; }
+      catch (err) {
+        say = err instanceof GoogleAuthError ? "Google sign-in has expired. Open Settings and tap Connect Google, then ask again." : "That didn't work. " + (err.message || "");
+        pendingNote = "The user confirmed, but the action failed: " + (err.message || "error") + ".";
+      }
+      setState(null); busy = false; sendBtn.disabled = false;
+      addMsg("bot", say); speak(say, afterReply);
+      return;
+    }
+    if (/^(no|nope|nah|cancel|don't|do not|never mind)\b/i.test(command)) {
+      pendingNote = "The user said no, so nothing was sent or added.";
+      const say = "Okay, cancelled.";
+      addMsg("bot", say); speak(say, afterReply);
+      return;
+    }
+    pendingNote = "The user didn't confirm the earlier action, so it was not done.";
+  }
+
   const local = runSkills(command);
   if (local) {
     const el = addMsg("bot", local.say);
@@ -566,10 +874,26 @@ async function handle(raw) {
   const reply = await askClaude(command);
   bubble.classList.remove("pending");
   bubble.textContent = reply;
+  if (pending) addConfirmButtons(bubble);
   log.scrollTop = log.scrollHeight;
   setState(null);
   busy = false; sendBtn.disabled = false;
   speak(reply, afterReply);
+}
+
+function addConfirmButtons(bubble) {
+  const row = document.createElement("div");
+  row.className = "confirm";
+  for (const [label, reply, cls] of [["Yes", "yes", "send"], ["No", "no", "toggle"]]) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = cls; b.textContent = label;
+    b.onclick = () => handle(reply);
+    row.appendChild(b);
+  }
+  bubble.appendChild(row);
+}
+function clearConfirmButtons() {
+  document.querySelectorAll(".confirm").forEach((row) => row.remove());
 }
 
 $("composer").addEventListener("submit", (e) => {
@@ -621,7 +945,30 @@ $("testVoice").onclick = () => {
   const msg = "Hello, this is Jarvis. If you can hear me, voice is working.";
   addMsg("bot", msg); speak(msg);
 };
-$("newChat").onclick = () => { messages = []; addMsg("bot", "Starting a new conversation."); };
+$("newChat").onclick = () => { messages = []; pending = null; pendingNote = ""; clearConfirmButtons(); addMsg("bot", "Starting a new conversation."); };
+$("googleClientId").value = store.get("googleClientId", "");
+renderGoogleStatus();
+prepareGoogle();
+$("saveClientId").onclick = () => {
+  const id = $("googleClientId").value.trim();
+  if (!id.endsWith(".apps.googleusercontent.com")) { renderGoogleStatus("That doesn't look like a Google client ID. It ends in .apps.googleusercontent.com."); return; }
+  store.set("googleClientId", id);
+  tokenClient = null;
+  renderGoogleStatus("Client ID saved. Getting Google sign-in ready...");
+  prepareGoogle().then(() => tokenClient && renderGoogleStatus());
+};
+$("connectGoogle").onclick = () => {
+  if (!store.get("googleClientId")) { renderGoogleStatus("Paste your Google OAuth client ID and tap Save ID first."); return; }
+  if (!tokenClient) { renderGoogleStatus("Google sign-in is still loading. Tap Connect Google again in a moment."); prepareGoogle(); return; }
+  tokenClient.requestAccessToken({ prompt: googleToken ? "" : "consent" });
+};
+$("disconnectGoogle").onclick = () => {
+  if (googleToken && window.google?.accounts?.oauth2) { try { google.accounts.oauth2.revoke(googleToken.access_token, () => {}); } catch {} }
+  googleToken = null;
+  store.set("googleToken", null);
+  renderGoogleStatus();
+  addMsg("bot", "Google is disconnected.");
+};
 $("voiceToggle").onclick = () => {
   voiceOn = !voiceOn;
   store.set("voice", voiceOn ? "on" : "off");
