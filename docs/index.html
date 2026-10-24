@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
+<title>Jarvis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: one-screen voice console. Orb on top, conversation in the middle, composer pinned to the bottom. */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --ink: #16202b;
+  --muted: #5a6776;
+  --line: #d5dce5;
+  --accent: #2f5bd3;
+  --accent-ink: #ffffff;
+  --accent-soft: #dfe7fb;
+  --listen: #c2410c;
+  --warn: #a5560c;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", -apple-system, "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d131a; --surface: #151e28; --ink: #e6ecf2; --muted: #93a1b0; --line: #253140;
+    --accent: #7ea2ff; --accent-ink: #0d131a; --accent-soft: #1d2a45; --listen: #fb923c; --warn: #f0a35a;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 17px; line-height: 1.5;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+[hidden] { display: none !important; }
+.app {
+  height: 100%; max-width: 680px; margin: 0 auto;
+  display: grid; grid-template-rows: auto auto auto 1fr auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 0;
+}
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; margin: 0; letter-spacing: -0.01em; }
+.status {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.app[data-state="speaking"] .status::before, .app[data-state="thinking"] .status::before { background: var(--accent); }
+.app[data-state="listening"] .status::before { background: var(--listen); }
+.header-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.toggle {
+  font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+}
+.toggle[aria-pressed="false"] { color: var(--muted); }
+
+.settings {
+  margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px 16px; display: grid; gap: 10px;
+}
+.settings h2 { font-family: var(--font-display); font-size: 1.05rem; margin: 0; }
+.settings p { margin: 0; font-size: 0.88rem; color: var(--muted); }
+.settings .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings input[type="password"] { flex: 1 1 220px; min-width: 0; }
+.settings label.check { display: flex; gap: 8px; align-items: center; font-size: 0.95rem; }
+.settings a { color: var(--accent); }
+
+.orb-wrap { display: grid; place-items: center; padding-block: 18px 6px; }
+.orb {
+  position: relative; width: 120px; height: 120px; border-radius: 50%; border: 0; cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 70%);
+  box-shadow: 0 10px 30px -12px var(--accent);
+  -webkit-tap-highlight-color: transparent;
+}
+.app[data-state="listening"] .orb {
+  background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--listen) 70%);
+  box-shadow: 0 10px 30px -12px var(--listen);
+}
+.orb::before, .orb::after {
+  content: ""; position: absolute; inset: -10px; border-radius: 50%;
+  border: 2px solid var(--accent); opacity: 0;
+}
+.app[data-state="listening"] .orb::before, .app[data-state="listening"] .orb::after { border-color: var(--listen); }
+.app[data-state="speaking"] .orb::before, .app[data-state="listening"] .orb::before { animation: ring 1.4s ease-out infinite; }
+.app[data-state="speaking"] .orb::after, .app[data-state="listening"] .orb::after { animation: ring 1.4s ease-out 0.7s infinite; }
+.app[data-state="thinking"] .orb { animation: breathe 1.2s ease-in-out infinite; }
+@keyframes ring { from { transform: scale(0.9); opacity: 0.7; } to { transform: scale(1.35); opacity: 0; } }
+@keyframes breathe { 50% { transform: scale(0.94); } }
+@media (prefers-reduced-motion: reduce) {
+  .app[data-state] .orb, .app[data-state] .orb::before, .app[data-state] .orb::after { animation: none; }
+}
+.orb-hint { margin: 12px 0 0; font-size: 0.9rem; color: var(--muted); text-align: center; }
+
+.log {
+  overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 10px;
+  padding-block: 8px 12px;
+}
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.you { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.msg.bot { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.msg.bot.pending { color: var(--muted); font-style: italic; }
+.msg a { color: inherit; font-weight: 700; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 4px 10px; }
+.chip {
+  font: inherit; font-size: 0.88rem; color: var(--ink); background: var(--accent-soft);
+  border: 0; border-radius: 999px; padding: 7px 13px; cursor: pointer;
+}
+
+.composer {
+  display: flex; gap: 8px; align-items: center;
+  padding-block: 10px max(12px, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line); background: var(--bg);
+}
+input[type="text"], input[type="password"] {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: 11px 16px;
+}
+.composer input { flex: 1; min-width: 0; }
+input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.send {
+  font: inherit; font-weight: 700; color: var(--accent-ink); background: var(--accent);
+  border: 0; border-radius: 999px; padding: 11px 20px; cursor: pointer;
+}
+.send:disabled { opacity: 0.5; cursor: default; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <div>
+      <h1>Jarvis</h1>
+      <span class="status" id="status">Ready</span>
+    </div>
+    <div class="header-actions">
+      <button class="toggle" id="voiceToggle" type="button" aria-pressed="true">Voice on</button>
+      <button class="toggle" id="settingsToggle" type="button" aria-expanded="false" aria-controls="settings">Settings</button>
+    </div>
+  </header>
+
+  <section class="settings" id="settings" hidden>
+    <h2>Settings</h2>
+    <p>An Anthropic API key lets Jarvis answer any question. It's saved only in this browser on this device. Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+    <div class="row">
+      <input id="apiKey" type="password" autocomplete="off" placeholder="sk-ant-..." aria-label="Anthropic API key">
+      <button class="send" id="saveKey" type="button">Save key</button>
+      <button class="toggle" id="clearKey" type="button">Remove key</button>
+    </div>
+    <label class="check"><input id="handsFree" type="checkbox"> Keep listening after each answer</label>
+    <div class="row">
+      <button class="toggle" id="testVoice" type="button">Test voice</button>
+      <button class="toggle" id="newChat" type="button">New conversation</button>
+    </div>
+  </section>
+
+  <div class="orb-wrap">
+    <button class="orb" id="orb" type="button" aria-label="Tap to talk"></button>
+    <p class="orb-hint" id="hint">Tap the circle and start talking.</p>
+  </div>
+
+  <div class="log" id="log" aria-live="polite">
+    <div class="msg bot">Hello, I'm Jarvis. Tap the circle and talk to me, or try one of these.</div>
+    <div class="chips" id="chips">
+      <button class="chip" type="button">What time is it?</button>
+      <button class="chip" type="button">What is 12 times 12?</button>
+      <button class="chip" type="button">Set a timer for 1 minute</button>
+      <button class="chip" type="button">Tell me a joke</button>
+      <button class="chip" type="button">Why is the sky blue?</button>
+    </div>
+  </div>
+
+  <form class="composer" id="composer">
+    <input id="input" type="text" autocomplete="off" enterkeyhint="send" placeholder="Or type a command" aria-label="Command">
+    <button class="send" id="send" type="submit">Send</button>
+  </form>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const app = $("app"), log = $("log"), input = $("input"), sendBtn = $("send");
+const NAME = "Jarvis";
+const MODEL = "claude-opus-5-5";
+const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.132.0/+esm";
+
+const store = {
+  get(k, d = null) { try { const v = localStorage.getItem("jarvis." + k); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { try { v === null ? localStorage.removeItem("jarvis." + k) : localStorage.setItem("jarvis." + k, v); return true; } catch { return false; } },
+};
+
+function setState(state, label) {
+  if (state) app.dataset.state = state; else delete app.dataset.state;
+  $("status").textContent = label || "Ready";
+}
+
+function addMsg(who, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + who;
+  el.textContent = text;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+function addLink(el, href, label) {
+  el.appendChild(document.createTextNode(" "));
+  const a = document.createElement("a");
+  a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = label;
+  el.appendChild(a);
+}
+
+// ---------- speaking ----------
+let voiceOn = store.get("voice") !== "off";
+let handsFree = store.get("handsFree") === "on";
+const synth = window.speechSynthesis || null;
+
+function renderVoiceToggle() {
+  const t = $("voiceToggle");
+  t.setAttribute("aria-pressed", String(voiceOn));
+  t.textContent = voiceOn ? "Voice on" : "Voice off";
+}
+renderVoiceToggle();
+$("handsFree").checked = handsFree;
+
+function speak(text, then) {
+  if (!voiceOn || !synth || !text) { then?.(); return; }
+  try {
+    if (synth.speaking || synth.pending) synth.cancel();
+    try { synth.resume(); } catch {}
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-US";
+    u.onstart = () => setState("speaking", "Speaking");
+    u.onend = () => { if (app.dataset.state === "speaking") setState(null); then?.(); };
+    u.onerror = () => { if (app.dataset.state === "speaking") setState(null); };
+    synth.speak(u);
+  } catch { setState(null, "Voice error"); }
+}
+
+// ---------- listening ----------
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+let rec = null;
+if (!Recognition) $("hint").textContent = "This browser can't listen. Open this page in Safari or Chrome, or type below.";
+
+function stopListening() {
+  if (rec) { try { rec.abort(); } catch {} rec = null; }
+  if (app.dataset.state === "listening") setState(null);
+}
+
+function listen() {
+  if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
+  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  stopListening();
+  let finalText = "";
+  const r = new Recognition();
+  rec = r;
+  r.lang = "en-US";
+  r.interimResults = true;
+  r.continuous = false;
+  r.onresult = (e) => {
+    let text = "";
+    for (const res of e.results) text += res[0].transcript;
+    input.value = text;
+    if (e.results[e.results.length - 1].isFinal) finalText = text;
+  };
+  r.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      addMsg("bot", "I need microphone access. Allow it when Safari asks, or in Settings > Safari > Microphone, then tap the circle again.");
+      if (handsFree) { handsFree = false; $("handsFree").checked = false; }
+    }
+  };
+  r.onend = () => {
+    if (rec === r) rec = null;
+    if (app.dataset.state === "listening") setState(null);
+    const text = (finalText || input.value).trim();
+    if (text) { input.value = ""; handle(text); }
+  };
+  try {
+    r.start();
+    setState("listening", "Listening");
+  } catch {
+    rec = null;
+    setState(null);
+  }
+}
+
+$("orb").onclick = () => {
+  if (app.dataset.state === "listening") { if (rec) rec.stop(); return; }
+  if (synth && synth.speaking) { synth.cancel(); setState(null); return; }
+  listen();
+};
+
+// ---------- built-in skills ----------
+const JOKES = [
+  "Why do programmers prefer dark mode? Because light attracts bugs.",
+  "I would tell you a UDP joke, but you might not get it.",
+  "There are 10 kinds of people: those who understand binary and those who don't.",
+  "Why did the computer go to the doctor? It had a virus.",
+  "I told my computer I needed a break, and it said: no problem, I'll go to sleep.",
+];
+const SITES = {
+  google: "https://www.google.com", youtube: "https://www.youtube.com", gmail: "https://mail.google.com",
+  github: "https://github.com", wikipedia: "https://www.wikipedia.org", maps: "https://maps.google.com",
+  news: "https://news.google.com", netflix: "https://www.netflix.com", amazon: "https://www.amazon.com",
+};
+const loadNotes = () => { try { return JSON.parse(store.get("notes", "[]")); } catch { return []; } };
+
+// Small arithmetic parser (no eval): + - * / % ^, parentheses, unary minus.
+function toExpression(text) {
+  let e = " " + text.toLowerCase().replace(/[?,]/g, "") + " ";
+  const words = [
+    [/\bmultiplied by\b|\btimes\b|\bx\b/g, "*"], [/\bdivided by\b|\bover\b/g, "/"],
+    [/\bplus\b|\badded to\b/g, "+"], [/\bminus\b|\bless\b/g, "-"],
+    [/\bto the power of\b/g, "^"], [/\bsquared\b/g, "^2"], [/\bcubed\b/g, "^3"], [/\bmod(ulo)?\b/g, "%"],
+    [/×/g, "*"], [/÷/g, "/"], [/\*\*/g, "^"],
+  ];
+  for (const [re, sym] of words) e = e.replace(re, " " + sym + " ");
+  e = e.trim();
+  if (!/^[\d\s.+\-*/%^()]+$/.test(e) || !/\d/.test(e) || !/[+\-*/%^]/.test(e)) return null;
+  return e;
+}
+function evaluate(expr) {
+  const tokens = expr.match(/\d+(?:\.\d+)?|\.\d+|[+\-*/%^()]/g) || [];
+  let i = 0;
+  const peek = () => tokens[i], next = () => tokens[i++];
+  function primary() {
+    const t = next();
+    if (t === "(") { const v = sum(); if (next() !== ")") throw 0; return v; }
+    if (t === "-") return -primary();
+    if (t === "+") return primary();
+    if (t !== undefined && /^[\d.]/.test(t)) return parseFloat(t);
+    throw 0;
+  }
+  function power() {
+    const base = primary();
+    if (peek() === "^") { next(); const ex = power(); if (Math.abs(ex) > 100) throw 0; return Math.pow(base, ex); }
+    return base;
+  }
+  function product() {
+    let v = power();
+    while (["*", "/", "%"].includes(peek())) {
+      const op = next(), r = power();
+      if ((op === "/" || op === "%") && r === 0) throw 0;
+      v = op === "*" ? v * r : op === "/" ? v / r : v % r;
+    }
+    return v;
+  }
+  function sum() {
+    let v = product();
+    while (["+", "-"].includes(peek())) { const op = next(), r = product(); v = op === "+" ? v + r : v - r; }
+    return v;
+  }
+  const v = sum();
+  if (i !== tokens.length || !isFinite(v)) throw 0;
+  return Math.round(v * 1e6) / 1e6;
+}
+
+const UNITS = { second: 1, minute: 60, hour: 3600 };
+const SKILLS = [
+  [/^(hi|hello|hey|good (morning|afternoon|evening))\b/i, () => {
+    const h = new Date().getHours();
+    return { say: `Good ${h < 12 ? "morning" : h < 18 ? "afternoon" : "evening"}. How can I help?` };
+  }],
+  [/\b(what can you do|help|commands)\b/i, () => ({
+    say: "I can tell the time and date, do arithmetic, set timers, open websites, search the web, take notes, and tell jokes. With an API key in Settings, I can answer anything else too.",
+  })],
+  [/\bjoke\b/i, () => ({ say: JOKES[Math.floor(Math.random() * JOKES.length)] })],
+  [/\bwhat(?:'s| is) the time\b|\bwhat time is it\b|^time$/i, () => ({
+    say: "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".",
+  })],
+  [/\bwhat(?:'s| is) (?:the |today's )?date\b|\bwhat day is (it|today)\b/i, () => ({
+    say: "Today is " + new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }) + ".",
+  })],
+  [/\b(?:set )?(?:a )?timer (?:for )?(\d+(?:\.\d+)?) (second|minute|hour)s?\b/i, (m) => {
+    const amount = parseFloat(m[1]), unit = m[2].toLowerCase();
+    const label = `${m[1]} ${unit}${amount === 1 ? "" : "s"}`;
+    setTimeout(() => { const msg = `Your ${label} timer is done.`; addMsg("bot", msg); speak(msg); }, amount * UNITS[unit] * 1000);
+    return { say: `Timer set for ${label}. Keep this page open.` };
+  }],
+  [/^(?:calculate|compute|what(?:'s| is))\s+(.+)$/i, (m) => {
+    const expr = toExpression(m[1]);
+    if (!expr) return null;
+    try { return { say: `That's ${evaluate(expr)}.` }; } catch { return { say: "Sorry, I couldn't work that out." }; }
+  }],
+  [/^open (?:up )?(?:the )?([\w.\-]+)(?: website)?$/i, (m) => {
+    const target = m[1].toLowerCase();
+    const url = SITES[target] || ("https://" + (target.includes(".") ? target : target + ".com"));
+    return { say: `Here's ${m[1]}.`, link: [url, "Open " + m[1]] };
+  }],
+  [/^(?:search(?: the web| google)?(?: for)?|google|look up) (.+)$/i, (m) => ({
+    say: `Here are results for ${m[1]}.`,
+    link: ["https://www.google.com/search?q=" + encodeURIComponent(m[1]), "Open search results"],
+  })],
+  [/^(?:take a note|make a note|note|remember(?: that)?)[:,]?\s+(.+)$/i, (m) => {
+    const notes = loadNotes();
+    notes.push({ at: Date.now(), text: m[1].trim() });
+    return { say: store.set("notes", JSON.stringify(notes)) ? "Got it, I've noted that." : "I couldn't save notes in this browser." };
+  }],
+  [/\b(read|what are) (back )?my notes\b/i, () => {
+    const notes = loadNotes();
+    if (!notes.length) return { say: "You don't have any notes yet." };
+    return { say: "Your latest notes: " + notes.slice(-5).map((n) => n.text).join(". ") + "." };
+  }],
+];
+
+function runSkills(command) {
+  for (const [re, handler] of SKILLS) {
+    const m = command.match(re);
+    if (!m) continue;
+    const out = handler(m);
+    if (out) return out;
+  }
+  return null;
+}
+
+// ---------- Claude for everything else ----------
+const SYSTEM = `You are ${NAME}, a friendly voice assistant. Your replies are read aloud by text-to-speech, ` +
+  "so answer in one to three short, natural spoken sentences. Never use markdown, bullet points, " +
+  "code blocks, emoji, or URLs. If a question needs a long answer, give the key point and offer to go deeper. " +
+  "You speak through the device's speaker; if the user says they can't hear you, they mean your voice, " +
+  "so suggest turning the volume up and Silent Mode off. The page handles time, timers, notes and links itself.";
+let messages = [];
+let clientPromise = null;
+
+function getClient(apiKey) {
+  if (!clientPromise) {
+    clientPromise = import(SDK_URL)
+      .then((mod) => ({ Anthropic: mod.default, client: new mod.default({ apiKey, dangerouslyAllowBrowser: true }) }))
+      .catch((err) => { clientPromise = null; throw err; });
+  }
+  return clientPromise;
+}
+
+async function askClaude(question) {
+  const apiKey = store.get("apiKey");
+  if (!apiKey) return "To answer that, I need an Anthropic API key. Tap Settings at the top and paste one in.";
+  let sdk;
+  try { sdk = await getClient(apiKey); } catch { return "I couldn't load my language model. Check your internet connection."; }
+  const { Anthropic, client } = sdk;
+
+  messages.push({ role: "user", content: question });
+  try {
+    const response = await client.beta.messages.create({
+      model: MODEL,
+      max_tokens: 16000,
+      system: SYSTEM,
+      messages,
+      output_config: { effort: "low" },
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+    });
+    if (response.stop_reason === "refusal") { messages.pop(); return "Sorry, I can't help with that one."; }
+    // Keep the full content (including thinking blocks) so the history stays append-only.
+    messages.push({ role: "assistant", content: response.content });
+    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
+    return text || "I'm not sure what to say to that.";
+  } catch (err) {
+    messages.pop();
+    if (err instanceof Anthropic.AuthenticationError) return "That API key didn't work. Check it in Settings.";
+    if (err instanceof Anthropic.PermissionDeniedError) return "That API key isn't allowed to use this model.";
+    if (err instanceof Anthropic.RateLimitError) return "I'm being rate limited. Try again in a moment.";
+    if (err instanceof Anthropic.APIConnectionError) return "I can't reach the internet right now.";
+    if (err instanceof Anthropic.APIError) return `My language model returned an error, status ${err.status ?? "unknown"}.`;
+    return "Something went wrong while I was thinking. Try again.";
+  }
+}
+
+// ---------- main ----------
+let busy = false;
+
+function afterReply() {
+  if (handsFree && Recognition) listen();
+}
+
+async function handle(raw) {
+  const command = raw.trim().replace(/^(hey |ok |okay )?jarvis\b[\s,.!?]*/i, "").replace(/[.!]+$/, "").trim();
+  if (!command || busy) return;
+  $("chips")?.remove();
+  addMsg("you", raw.trim());
+
+  if (/^(good ?bye|bye|stop|quiet|be quiet|stop listening)\b/i.test(command)) {
+    handsFree = false; $("handsFree").checked = false; store.set("handsFree", "off");
+    const msg = "Okay. Tap the circle when you need me.";
+    addMsg("bot", msg); speak(msg); return;
+  }
+
+  const local = runSkills(command);
+  if (local) {
+    const el = addMsg("bot", local.say);
+    if (local.link) addLink(el, ...local.link);
+    speak(local.say, afterReply);
+    return;
+  }
+
+  busy = true; sendBtn.disabled = true;
+  setState("thinking", "Thinking");
+  const bubble = addMsg("bot pending", "Thinking...");
+  const reply = await askClaude(command);
+  bubble.classList.remove("pending");
+  bubble.textContent = reply;
+  log.scrollTop = log.scrollHeight;
+  setState(null);
+  busy = false; sendBtn.disabled = false;
+  speak(reply, afterReply);
+}
+
+$("composer").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = input.value;
+  input.value = "";
+  handle(text);
+});
+log.addEventListener("click", (e) => {
+  if (e.target.classList.contains("chip")) handle(e.target.textContent);
+});
+
+// ---------- settings ----------
+$("settingsToggle").onclick = () => {
+  const panel = $("settings");
+  panel.hidden = !panel.hidden;
+  $("settingsToggle").setAttribute("aria-expanded", String(!panel.hidden));
+  if (!panel.hidden) $("apiKey").placeholder = store.get("apiKey") ? "Key saved. Paste a new one to replace it." : "sk-ant-...";
+};
+$("saveKey").onclick = () => {
+  const key = $("apiKey").value.trim();
+  if (!key) return;
+  clientPromise = null;
+  const ok = store.set("apiKey", key);
+  $("apiKey").value = "";
+  $("apiKey").placeholder = "Key saved. Paste a new one to replace it.";
+  addMsg("bot", ok ? "Key saved. Ask me anything." : "I couldn't save the key. Private browsing may be blocking storage.");
+};
+$("clearKey").onclick = () => {
+  store.set("apiKey", null);
+  clientPromise = null;
+  $("apiKey").placeholder = "sk-ant-...";
+  addMsg("bot", "Key removed from this device.");
+};
+$("handsFree").onchange = (e) => { handsFree = e.target.checked; store.set("handsFree", handsFree ? "on" : "off"); };
+$("testVoice").onclick = () => {
+  if (!synth) { addMsg("bot", "This browser can't speak out loud."); return; }
+  if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
+  const msg = "Hello, this is Jarvis. If you can hear me, voice is working.";
+  addMsg("bot", msg); speak(msg);
+};
+$("newChat").onclick = () => { messages = []; addMsg("bot", "Starting a new conversation."); };
+$("voiceToggle").onclick = () => {
+  voiceOn = !voiceOn;
+  store.set("voice", voiceOn ? "on" : "off");
+  if (!voiceOn && synth) { synth.cancel(); setState(null); }
+  renderVoiceToggle();
+};
+</script>
+</body>
+</html>
