@@ -76,6 +76,8 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; marg
 .settings p { margin: 0; font-size: 0.88rem; color: var(--muted); }
 .settings .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .settings input[type="password"] { flex: 1 1 220px; min-width: 0; }
+.settings select { flex: 1 1 220px; min-width: 0; border-radius: 12px; padding: 10px 12px; }
+.settings .field { font-size: 0.95rem; font-weight: 700; }
 .settings label.check { display: flex; gap: 8px; align-items: center; font-size: 0.95rem; }
 .settings a { color: var(--accent); }
 
@@ -126,7 +128,7 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; marg
   padding-block: 10px max(12px, env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line); background: var(--bg);
 }
-input[type="text"], input[type="password"] {
+input[type="text"], input[type="password"], select {
   font: inherit; color: var(--ink); background: var(--surface);
   border: 1px solid var(--line); border-radius: 999px; padding: 11px 16px;
 }
@@ -160,16 +162,20 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
       <button class="send" id="saveKey" type="button">Save key</button>
       <button class="toggle" id="clearKey" type="button">Remove key</button>
     </div>
+    <label class="field" for="voicePick">Voice</label>
+    <div class="row">
+      <select id="voicePick"><option value="">Automatic</option></select>
+      <button class="toggle" id="testVoice" type="button">Test voice</button>
+    </div>
     <label class="check"><input id="handsFree" type="checkbox"> Keep listening after each answer</label>
     <div class="row">
-      <button class="toggle" id="testVoice" type="button">Test voice</button>
       <button class="toggle" id="newChat" type="button">New conversation</button>
     </div>
   </section>
 
   <div class="orb-wrap">
     <button class="orb" id="orb" type="button" aria-label="Tap to talk"></button>
-    <p class="orb-hint" id="hint">Tap the circle and start talking.</p>
+    <p class="orb-hint" id="hint">Tap the circle once and start talking. I'll keep listening after each answer.</p>
   </div>
 
   <div class="log" id="log" aria-live="polite">
@@ -223,8 +229,10 @@ function addLink(el, href, label) {
 
 // ---------- speaking ----------
 let voiceOn = store.get("voice") !== "off";
-let handsFree = store.get("handsFree") === "on";
+let handsFree = store.get("handsFree") !== "off";
 const synth = window.speechSynthesis || null;
+let voices = [];
+let voiceURI = store.get("voiceURI", "");
 
 function renderVoiceToggle() {
   const t = $("voiceToggle");
@@ -234,16 +242,35 @@ function renderVoiceToggle() {
 renderVoiceToggle();
 $("handsFree").checked = handsFree;
 
+// The voice list loads asynchronously, and Safari only fills it after "voiceschanged".
+function loadVoices() {
+  if (!synth) { $("voicePick").disabled = true; return; }
+  const isEnglish = (v) => v.lang.toLowerCase().startsWith("en");
+  voices = synth.getVoices().slice().sort((a, b) =>
+    (isEnglish(b) - isEnglish(a)) || a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
+  const pick = $("voicePick");
+  pick.replaceChildren(new Option("Automatic", ""));
+  for (const v of voices) pick.add(new Option(`${v.name} (${v.lang})`, v.voiceURI));
+  pick.value = voices.some((v) => v.voiceURI === voiceURI) ? voiceURI : "";
+}
+loadVoices();
+if (synth) synth.addEventListener?.("voiceschanged", loadVoices);
+const chosenVoice = () => voices.find((v) => v.voiceURI === voiceURI) || null;
+
 function speak(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
   try {
     if (synth.speaking || synth.pending) synth.cancel();
     try { synth.resume(); } catch {}
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "en-US";
+    const voice = chosenVoice();
+    if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "en-US"; }
     u.onstart = () => setState("speaking", "Speaking");
     u.onend = () => { if (app.dataset.state === "speaking") setState(null); then?.(); };
-    u.onerror = () => { if (app.dataset.state === "speaking") setState(null); };
+    u.onerror = (e) => {
+      if (app.dataset.state === "speaking") setState(null);
+      if (e.error !== "interrupted" && e.error !== "canceled") then?.();
+    };
     synth.speak(u);
   } catch { setState(null, "Voice error"); }
 }
@@ -251,7 +278,17 @@ function speak(text, then) {
 // ---------- listening ----------
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 let rec = null;
+let conversing = false;   // true from the first tap until the user pauses or goes quiet
+let quietRounds = 0;
+const MAX_QUIET_ROUNDS = 2;
 if (!Recognition) $("hint").textContent = "This browser can't listen. Open this page in Safari or Chrome, or type below.";
+
+function pauseConversation(note) {
+  conversing = false;
+  quietRounds = 0;
+  stopListening();
+  $("hint").textContent = note || "Paused. Tap the circle to talk again.";
+}
 
 function stopListening() {
   if (rec) { try { rec.abort(); } catch {} rec = null; }
@@ -274,17 +311,27 @@ function listen() {
     input.value = text;
     if (e.results[e.results.length - 1].isFinal) finalText = text;
   };
+  let blocked = false;
   r.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-      addMsg("bot", "I need microphone access. Allow it when Safari asks, or in Settings > Safari > Microphone, then tap the circle again.");
-      if (handsFree) { handsFree = false; $("handsFree").checked = false; }
+      blocked = true;
+      if (quietRounds === 0 && !input.value) {
+        addMsg("bot", "I need microphone access. Allow it when Safari asks, or in Settings > Safari > Microphone, then tap the circle again.");
+      }
+      pauseConversation("Tap the circle to keep talking.");
     }
   };
   r.onend = () => {
     if (rec === r) rec = null;
+    else if (rec) return; // a newer session already replaced this one
     if (app.dataset.state === "listening") setState(null);
     const text = (finalText || input.value).trim();
-    if (text) { input.value = ""; handle(text); }
+    input.value = "";
+    if (text) { quietRounds = 0; handle(text); return; }
+    if (blocked || !conversing) return;
+    // Heard nothing: listen again a couple of times, then pause so the mic isn't left on.
+    if (++quietRounds <= MAX_QUIET_ROUNDS) listen();
+    else pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again.");
   };
   try {
     r.start();
@@ -296,8 +343,18 @@ function listen() {
 }
 
 $("orb").onclick = () => {
-  if (app.dataset.state === "listening") { if (rec) rec.stop(); return; }
-  if (synth && synth.speaking) { synth.cancel(); setState(null); return; }
+  if (app.dataset.state === "listening") {
+    // Mid-sentence: send what was heard. Nothing heard yet: pause.
+    if (input.value.trim() && rec) rec.stop();
+    else pauseConversation();
+    return;
+  }
+  if (synth && synth.speaking) { synth.cancel(); setState(null); }
+  conversing = handsFree;
+  quietRounds = 0;
+  $("hint").textContent = handsFree
+    ? "Listening. I'll keep listening after each answer. Tap the circle to pause."
+    : "Tap the circle each time you want to talk.";
   listen();
 };
 
@@ -480,7 +537,7 @@ async function askClaude(question) {
 let busy = false;
 
 function afterReply() {
-  if (handsFree && Recognition) listen();
+  if (conversing && handsFree && Recognition) listen();
 }
 
 async function handle(raw) {
@@ -490,7 +547,7 @@ async function handle(raw) {
   addMsg("you", raw.trim());
 
   if (/^(good ?bye|bye|stop|quiet|be quiet|stop listening)\b/i.test(command)) {
-    handsFree = false; $("handsFree").checked = false; store.set("handsFree", "off");
+    pauseConversation();
     const msg = "Okay. Tap the circle when you need me.";
     addMsg("bot", msg); speak(msg); return;
   }
@@ -547,7 +604,17 @@ $("clearKey").onclick = () => {
   $("apiKey").placeholder = "sk-ant-...";
   addMsg("bot", "Key removed from this device.");
 };
-$("handsFree").onchange = (e) => { handsFree = e.target.checked; store.set("handsFree", handsFree ? "on" : "off"); };
+$("handsFree").onchange = (e) => {
+  handsFree = e.target.checked;
+  store.set("handsFree", handsFree ? "on" : "off");
+  if (!handsFree) conversing = false;
+};
+$("voicePick").onchange = (e) => {
+  voiceURI = e.target.value;
+  store.set("voiceURI", voiceURI || null);
+  if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
+  speak("Hi, I'm Jarvis. This is how I sound.");
+};
 $("testVoice").onclick = () => {
   if (!synth) { addMsg("bot", "This browser can't speak out loud."); return; }
   if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
