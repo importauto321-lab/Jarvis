@@ -22,8 +22,12 @@ save. After a minute it's live at
 `https://importauto321-lab.github.io/Jarvis/`.
 
 Built-in commands work right away. For general questions, tap **Settings** and
-paste an Anthropic API key; it's stored only in that browser. Turn on
-**Keep listening after each answer** for a hands-free back-and-forth.
+paste an Anthropic API key; it's stored only in that browser.
+
+Tap the circle once to start a conversation: after each answer Jarvis starts
+listening again by itself, so there's nothing to press. Tap the circle (or say
+"stop listening") to pause; it also pauses after a few quiet turns. Pick a
+voice under **Settings → Voice**; the choice is saved in that browser.
 
 ## Built-in skills
 
