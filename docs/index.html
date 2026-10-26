@@ -219,6 +219,8 @@ const store = {
   get(k, d = null) { try { const v = localStorage.getItem("jarvis." + k); return v === null ? d : v; } catch { return d; } },
   set(k, v) { try { v === null ? localStorage.removeItem("jarvis." + k) : localStorage.setItem("jarvis." + k, v); return true; } catch { return false; } },
 };
+// Ask the browser not to clear saved keys when it tidies up storage.
+try { navigator.storage?.persist?.(); } catch {}
 
 function setState(state, label) {
   if (state) app.dataset.state = state; else delete app.dataset.state;
@@ -909,11 +911,12 @@ log.addEventListener("click", (e) => {
 // ---------- settings ----------
 $("settingsToggle").onclick = () => {
   const panel = $("settings");
+  if (!panel.hidden && $("apiKey").value.trim()) saveKey();
   panel.hidden = !panel.hidden;
   $("settingsToggle").setAttribute("aria-expanded", String(!panel.hidden));
   if (!panel.hidden) $("apiKey").placeholder = store.get("apiKey") ? "Key saved. Paste a new one to replace it." : "sk-ant-...";
 };
-$("saveKey").onclick = () => {
+function saveKey() {
   const key = $("apiKey").value.trim();
   if (!key) return;
   clientPromise = null;
@@ -921,7 +924,9 @@ $("saveKey").onclick = () => {
   $("apiKey").value = "";
   $("apiKey").placeholder = "Key saved. Paste a new one to replace it.";
   addMsg("bot", ok ? "Key saved. Ask me anything." : "I couldn't save the key. Private browsing may be blocking storage.");
-};
+}
+$("saveKey").onclick = saveKey;
+$("apiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveKey(); } });
 $("clearKey").onclick = () => {
   store.set("apiKey", null);
   clientPromise = null;
@@ -949,6 +954,7 @@ $("newChat").onclick = () => { messages = []; pending = null; pendingNote = ""; 
 $("googleClientId").value = store.get("googleClientId", "");
 renderGoogleStatus();
 prepareGoogle();
+$("googleClientId").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("saveClientId").click(); } });
 $("saveClientId").onclick = () => {
   const id = $("googleClientId").value.trim();
   if (!id.endsWith(".apps.googleusercontent.com")) { renderGoogleStatus("That doesn't look like a Google client ID. It ends in .apps.googleusercontent.com."); return; }
