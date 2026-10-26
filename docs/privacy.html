@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
+<title>Jarvis Privacy Policy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Same palette and type as the Jarvis app, laid out as a readable document. */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --ink: #16202b;
+  --muted: #5a6776;
+  --line: #d5dce5;
+  --accent: #2f5bd3;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", -apple-system, "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d131a; --surface: #151e28; --ink: #e6ecf2; --muted: #93a1b0; --line: #253140; --accent: #7ea2ff;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 17px; line-height: 1.6;
+}
+main {
+  max-width: 680px; margin: 0 auto;
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
+}
+h1, h2 { font-family: var(--font-display); letter-spacing: -0.01em; line-height: 1.2; }
+h1 { font-size: 2rem; margin: 8px 0 4px; }
+h2 { font-size: 1.2rem; margin: 32px 0 8px; }
+p, ul { margin: 0 0 12px; }
+ul { padding-left: 1.2em; }
+li { margin-bottom: 6px; }
+a { color: var(--accent); }
+.meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+.back { font-size: 0.95rem; }
+.summary {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px 18px; margin: 20px 0;
+}
+.summary p:last-child { margin-bottom: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 0.95rem; margin-bottom: 12px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
+th { font-weight: 700; }
+code { font-size: 0.9em; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">&larr; Back to Jarvis</a>
+  <h1>Jarvis Privacy Policy</h1>
+  <p class="meta">Last updated October 26, 2026</p>
+
+  <div class="summary">
+    <p><strong>In short:</strong> Jarvis has no server and no account. Everything it saves stays in your own browser. It only sends data to the services you choose to use: Anthropic, to answer questions, and Google, for Gmail and Calendar. It has no ads, analytics or tracking.</p>
+  </div>
+
+  <p>Jarvis is a personal voice assistant web page hosted on GitHub Pages at <a href="https://importauto321-lab.github.io/Jarvis/">importauto321-lab.github.io/Jarvis</a>. This policy explains what the page stores, what it sends and to whom, and how to remove your data.</p>
+
+  <h2>What Jarvis saves on your device</h2>
+  <p>Jarvis saves the following in your browser's local storage on the device you're using. It's never uploaded to a Jarvis server, because there isn't one.</p>
+  <table>
+    <tr><th>Item</th><th>Why</th></tr>
+    <tr><td>Anthropic API key</td><td>So Jarvis can answer general questions using your own key</td></tr>
+    <tr><td>Google OAuth client ID</td><td>So Jarvis can ask Google for sign-in</td></tr>
+    <tr><td>Google access token</td><td>Keeps you signed in to Gmail and Calendar. It expires after about an hour.</td></tr>
+    <tr><td>Notes you ask Jarvis to take</td><td>So Jarvis can read them back to you</td></tr>
+    <tr><td>Voice, sound and listening settings</td><td>So your choices are remembered</td></tr>
+  </table>
+  <p>The current conversation is kept in memory only. It's gone when you close or reload the page.</p>
+
+  <h2>What Jarvis sends, and to whom</h2>
+  <ul>
+    <li><strong>Anthropic.</strong> When you ask something Jarvis can't answer on its own, it sends your question, the conversation so far, and your local time and time zone to Anthropic's API, using your API key. If Gmail and Calendar are connected, the email and calendar details Jarvis looks up to answer you are sent too. Anthropic's handling of this data is covered by its <a href="https://www.anthropic.com/legal/privacy">privacy policy</a> and the terms of your API account.</li>
+    <li><strong>Google (Gmail and Calendar).</strong> Only if you tap Connect Google. Jarvis then talks directly from your browser to Google's APIs to search and read your email, send email, and list and add calendar events. See <a href="https://policies.google.com/privacy">Google's privacy policy</a>.</li>
+    <li><strong>Speech.</strong> Listening and speaking use your browser's built-in speech features. Depending on your device and browser, Apple or Google may process the audio of what you say. Jarvis never receives or stores audio itself, only the words the browser recognizes.</li>
+    <li><strong>Page resources.</strong> Loading the page fetches fonts from Google Fonts and, when needed, Anthropic's code library from the jsDelivr CDN. The page itself is served by GitHub Pages. Like any website, these services can see your IP address and browser details.</li>
+  </ul>
+  <p>Jarvis doesn't sell, share or use your data for advertising, and it contains no analytics or tracking.</p>
+
+  <h2>Google user data</h2>
+  <p>When you connect Google, Jarvis asks for these permissions:</p>
+  <ul>
+    <li><code>gmail.readonly</code>: to search and read your email when you ask about it</li>
+    <li><code>gmail.send</code>: to send an email, only after you say or tap yes</li>
+    <li><code>calendar.events</code>: to list your events, and to add one only after you say or tap yes</li>
+  </ul>
+  <p>Jarvis uses this data only to answer your requests while you're using it. It's processed in your browser and isn't stored, apart from the short-lived access token. It's sent only to Anthropic, as described above, to answer your question. Jarvis's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. No person reads your Google data, and Jarvis doesn't use it for advertising or to train AI models.</p>
+
+  <h2>Removing your data</h2>
+  <ul>
+    <li>In Jarvis, open <strong>Settings</strong> and tap <strong>Remove key</strong> and <strong>Disconnect</strong>.</li>
+    <li>To erase everything, clear this site's data in your browser. On iPad or iPhone, go to <strong>Settings &rarr; Apps &rarr; Safari &rarr; Advanced &rarr; Website Data</strong> (or <strong>Settings &rarr; Safari</strong> on older versions) and remove <strong>github.io</strong>.</li>
+    <li>You can also remove Jarvis's access to your Google account at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>Jarvis isn't directed at children under 13.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the new version is posted on this page with a new date. The full history is public on <a href="https://github.com/importauto321-lab/Jarvis/commits/main/docs/privacy.html">GitHub</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about privacy? Open an issue at <a href="https://github.com/importauto321-lab/Jarvis/issues">github.com/importauto321-lab/Jarvis/issues</a>.</p>
+</main>
+</body>
+</html>
