@@ -141,6 +141,10 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
   border: 0; border-radius: 999px; padding: 11px 20px; cursor: pointer;
 }
 .send:disabled { opacity: 0.5; cursor: default; }
+.problem {
+  margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem;
+  background: var(--surface); border: 1px solid var(--warn); color: var(--ink); overflow-wrap: anywhere;
+}
 </style>
 </head>
 <body>
@@ -155,10 +159,12 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
       <button class="toggle" id="settingsToggle" type="button" aria-expanded="false" aria-controls="settings">Settings</button>
     </div>
   </header>
+  <p class="problem" id="problem" role="alert" hidden></p>
 
   <section class="settings" id="settings" hidden>
     <h2>Settings</h2>
     <p>An Anthropic API key lets Jarvis answer any question. It's saved only in this browser on this device. Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>.</p>
+    <p id="keyStatus"></p>
     <div class="row">
       <input id="apiKey" type="password" autocomplete="off" placeholder="sk-ant-..." aria-label="Anthropic API key">
       <button class="send" id="saveKey" type="button">Save key</button>
@@ -184,6 +190,7 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
       <button class="send" id="connectGoogle" type="button">Connect Google</button>
       <button class="toggle" id="disconnectGoogle" type="button">Disconnect</button>
     </div>
+    <p>Page version 6</p>
   </section>
 
   <div class="orb-wrap">
@@ -202,12 +209,23 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
     </div>
   </div>
 
-  <form class="composer" id="composer">
+  <form class="composer" id="composer" onsubmit="return false">
     <input id="input" type="text" autocomplete="off" enterkeyhint="send" placeholder="Or type a command" aria-label="Command">
     <button class="send" id="send" type="submit">Send</button>
   </form>
 </div>
 
+<script>
+// If the main script can't run in this browser, say so on the page instead of doing nothing.
+function showProblem(text) {
+  var el = document.getElementById("problem");
+  if (el) { el.textContent = text; el.hidden = false; }
+}
+window.addEventListener("error", function (e) { showProblem("Jarvis hit an error: " + (e.message || "unknown") + ". Screenshot this and send it."); });
+setTimeout(function () {
+  if (!window.jarvisReady) showProblem("Jarvis couldn't start in this browser, so typing and saving won't work. Update the device (Settings > General > Software Update) or open the page in Safari or Chrome. Browser: " + navigator.userAgent);
+}, 4000);
+</script>
 <script type="module">
 const $ = (id) => document.getElementById(id);
 const app = $("app"), log = $("log"), input = $("input"), sendBtn = $("send");
@@ -511,8 +529,9 @@ const googleConnected = () => !!googleToken && googleToken.expires_at > Date.now
 function renderGoogleStatus(note) {
   const el = $("googleStatus");
   if (note) { el.textContent = note; return; }
+  const savedId = store.get("googleClientId");
   if (googleConnected()) el.textContent = "Connected. Ask about your email or calendar.";
-  else if (store.get("googleClientId")) el.textContent = googleToken ? "Sign-in expired. Tap Connect Google." : "Client ID saved. Tap Connect Google.";
+  else if (savedId) el.textContent = (googleToken ? "Sign-in expired. Tap Connect Google." : "Client ID saved. Tap Connect Google.") + ` (ID starts with ${savedId.slice(0, 12)}...)`;
   else {
     el.textContent = "Not connected. Paste your Google OAuth client ID, then tap Connect Google. ";
     const a = document.createElement("a");
@@ -752,8 +771,9 @@ let clientPromise = null;
 
 function getClient(apiKey) {
   if (!clientPromise) {
-    clientPromise = import(SDK_URL)
-      .then((mod) => ({ Anthropic: mod.default, client: new mod.default({ apiKey, dangerouslyAllowBrowser: true }) }))
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("load timed out")), 20000));
+    clientPromise = Promise.race([import(SDK_URL), timeout])
+      .then((mod) => ({ Anthropic: mod.default, client: new mod.default({ apiKey, dangerouslyAllowBrowser: true, timeout: 90000, maxRetries: 1 }) }))
       .catch((err) => { clientPromise = null; throw err; });
   }
   return clientPromise;
@@ -811,6 +831,7 @@ async function askClaude(question) {
     if (err instanceof Anthropic.AuthenticationError) return "That API key didn't work. Check it in Settings.";
     if (err instanceof Anthropic.PermissionDeniedError) return "That API key isn't allowed to use this model.";
     if (err instanceof Anthropic.RateLimitError) return "I'm being rate limited. Try again in a moment.";
+    if (err instanceof Anthropic.APIConnectionTimeoutError) return "That took too long to answer. Try again.";
     if (err instanceof Anthropic.APIConnectionError) return "I can't reach the internet right now.";
     if (err instanceof Anthropic.APIError) return `My language model returned an error, status ${err.status ?? "unknown"}.`;
     return "Something went wrong while I was thinking. Try again.";
@@ -826,7 +847,8 @@ function afterReply() {
 
 async function handle(raw) {
   const command = raw.trim().replace(/^(hey |ok |okay )?jarvis\b[\s,.!?]*/i, "").replace(/[.!]+$/, "").trim();
-  if (!command || busy) return;
+  if (!command) return;
+  if (busy) { addMsg("bot", "Still working on your last question. One moment."); return; }
   $("chips")?.remove();
   addMsg("you", raw.trim());
 
@@ -912,18 +934,30 @@ log.addEventListener("click", (e) => {
 $("settingsToggle").onclick = () => {
   const panel = $("settings");
   if (!panel.hidden && $("apiKey").value.trim()) saveKey();
+  if (!panel.hidden && $("googleClientId").value.trim() && $("googleClientId").value.trim() !== store.get("googleClientId")) saveClientId();
   panel.hidden = !panel.hidden;
   $("settingsToggle").setAttribute("aria-expanded", String(!panel.hidden));
   if (!panel.hidden) $("apiKey").placeholder = store.get("apiKey") ? "Key saved. Paste a new one to replace it." : "sk-ant-...";
 };
+// Opened from the Home Screen, iOS gives the page its own storage, separate from Safari's.
+const fromHomeScreen = navigator.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches;
+function renderKeyStatus() {
+  const key = store.get("apiKey");
+  $("keyStatus").textContent = key
+    ? `A key is saved on this device (ends in ${key.slice(-4)}).`
+    : "No key saved yet." + (fromHomeScreen ? " The Home Screen app keeps its own storage, separate from Safari, so paste the key here." : "");
+}
+renderKeyStatus();
 function saveKey() {
-  const key = $("apiKey").value.trim();
+  const key = $("apiKey").value.replace(/\s+/g, "");
   if (!key) return;
+  if (!key.startsWith("sk-ant-")) { addMsg("bot", "That doesn't look like an Anthropic API key. It starts with sk-ant-. Copy the whole key and paste it again."); return; }
   clientPromise = null;
-  const ok = store.set("apiKey", key);
+  const ok = store.set("apiKey", key) && store.get("apiKey") === key;
   $("apiKey").value = "";
   $("apiKey").placeholder = "Key saved. Paste a new one to replace it.";
-  addMsg("bot", ok ? "Key saved. Ask me anything." : "I couldn't save the key. Private browsing may be blocking storage.");
+  renderKeyStatus();
+  addMsg("bot", ok ? "Key saved. Ask me anything." : "I couldn't save the key. Turn off Private Browsing in Safari, then try again.");
 }
 $("saveKey").onclick = saveKey;
 $("apiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveKey(); } });
@@ -931,6 +965,7 @@ $("clearKey").onclick = () => {
   store.set("apiKey", null);
   clientPromise = null;
   $("apiKey").placeholder = "sk-ant-...";
+  renderKeyStatus();
   addMsg("bot", "Key removed from this device.");
 };
 $("handsFree").onchange = (e) => {
@@ -955,15 +990,20 @@ $("googleClientId").value = store.get("googleClientId", "");
 renderGoogleStatus();
 prepareGoogle();
 $("googleClientId").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("saveClientId").click(); } });
-$("saveClientId").onclick = () => {
-  const id = $("googleClientId").value.trim();
-  if (!id.endsWith(".apps.googleusercontent.com")) { renderGoogleStatus("That doesn't look like a Google client ID. It ends in .apps.googleusercontent.com."); return; }
-  store.set("googleClientId", id);
+// Pull the ID out of whatever was pasted (extra spaces, line breaks or a "Client ID:" label).
+function saveClientId() {
+  const id = ($("googleClientId").value.replace(/\s+/g, "").match(/[\w-]+\.apps\.googleusercontent\.com/) || [""])[0];
+  if (!id) { renderGoogleStatus("That doesn't look like a Google client ID. It ends in .apps.googleusercontent.com. Copy the Client ID (not the client secret) and paste it again."); return; }
+  if (id === store.get("googleClientId") && tokenClient) return;
+  if (!store.set("googleClientId", id) || store.get("googleClientId") !== id) { renderGoogleStatus("I couldn't save the ID. Turn off Private Browsing in Safari, then try again."); return; }
+  $("googleClientId").value = id;
   tokenClient = null;
   renderGoogleStatus("Client ID saved. Getting Google sign-in ready...");
   prepareGoogle().then(() => tokenClient && renderGoogleStatus());
-};
+}
+$("saveClientId").onclick = saveClientId;
 $("connectGoogle").onclick = () => {
+  if (!store.get("googleClientId") && $("googleClientId").value.trim()) saveClientId();
   if (!store.get("googleClientId")) { renderGoogleStatus("Paste your Google OAuth client ID and tap Save ID first."); return; }
   if (!tokenClient) { renderGoogleStatus("Google sign-in is still loading. Tap Connect Google again in a moment."); prepareGoogle(); return; }
   tokenClient.requestAccessToken({ prompt: googleToken ? "" : "consent" });
@@ -975,6 +1015,7 @@ $("disconnectGoogle").onclick = () => {
   renderGoogleStatus();
   addMsg("bot", "Google is disconnected.");
 };
+window.jarvisReady = true;
 $("voiceToggle").onclick = () => {
   voiceOn = !voiceOn;
   store.set("voice", voiceOn ? "on" : "off");
