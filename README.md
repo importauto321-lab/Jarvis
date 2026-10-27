@@ -29,6 +29,16 @@ listening again by itself, so there's nothing to press. Tap the circle (or say
 "stop listening") to pause; it also pauses after a few quiet turns. Pick a
 voice under **Settings → Voice**; the choice is saved in that browser.
 
+### Texting
+
+Ask Jarvis to text someone ("text Mom that I'm running late", or "text 555 123
+4567 saying on my way"). It writes the message and shows it with an
+**Open in Messages** button, which opens Messages with the text filled in; you
+tap Send. It's free: the text goes through your own Messages app, and Jarvis
+never sends anything itself. Saying "...saying <exact words>" works without an
+API key. On an iPad, texts to non-Apple phones need Text Message Forwarding
+from your iPhone (iPhone Settings → Apps → Messages → Text Message Forwarding).
+
 ### Gmail and Calendar setup
 
 The web version can check your calendar and search and read your email. It

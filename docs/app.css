@@ -107,6 +107,7 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; marg
 .msg.card { border: 2px solid var(--warn); font-style: normal; color: var(--ink); }
 .card .detail { display: block; margin-top: 6px; font-size: 0.92rem; }
 .card .detail b { font-weight: 700; }
+.card a.send { display: inline-block; color: var(--accent-ink); text-decoration: none; }
 .card .warning { display: block; margin-top: 8px; color: var(--warn); font-weight: 700; }
 .settings hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 4px 10px; }
