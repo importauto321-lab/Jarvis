@@ -160,13 +160,22 @@ $("orb").onclick = () => {
     return;
   }
   if (synth && synth.speaking) { synth.cancel(); setState(null); }
+  // Google's sign-in window would cut the microphone off, so reconnect first and listen once it's done.
+  if (ensureGoogle()) {
+    $("hint").textContent = "Reconnecting to Google. I'll start listening in a moment.";
+    afterConnect = startTalking;
+    return;
+  }
+  startTalking();
+};
+function startTalking() {
   conversing = handsFree;
   quietRounds = 0;
   $("hint").textContent = handsFree
     ? "Listening. I'll keep listening after each answer. Tap the circle to pause."
     : "Tap the circle each time you want to talk.";
   listen();
-};
+}
 
 // ---------- built-in skills ----------
 const JOKES = [
@@ -301,11 +310,20 @@ const SCOPE = {
   calendarWrite: "https://www.googleapis.com/auth/calendar.events",
 };
 let allowActions = store.get("allowActions") === "on";
-const wantedScopes = () => [SCOPE.gmailRead, SCOPE.calendarRead, ...(allowActions ? [SCOPE.gmailSend, SCOPE.calendarWrite] : [])].join(" ");
+// calendar.events already includes reading, so it replaces the read-only calendar scope rather than joining it.
+const wantedScopes = () => (allowActions
+  ? [SCOPE.gmailRead, SCOPE.gmailSend, SCOPE.calendarWrite]
+  : [SCOPE.gmailRead, SCOPE.calendarRead]).join(" ");
 let tokenClient = null;
 // The Google sign-in lives only in memory, so it's gone when Jarvis is closed. Older versions saved it; remove that copy.
 let googleToken = null; // { access_token, expires_at, scopes: Set }
 store.set("googleToken", null);
+// What is remembered is only that you connected, and with which address, so Jarvis can reconnect on your first tap.
+let googleRemembered = store.get("googleRemember") === "on";
+let connecting = null;      // resolves when an open sign-in window finishes
+let finishConnect = null;
+let autoConnect = false;    // true when Jarvis reconnected by itself, so it stays quiet about it
+let afterConnect = null;    // runs once sign-in finishes, e.g. start listening
 
 const googleConnected = () => !!googleToken && googleToken.expires_at > Date.now() + 30000;
 const hasScope = (scope) => googleConnected() && googleToken.scopes.has(scope);
@@ -320,7 +338,8 @@ function renderGoogleStatus(note) {
       ? "Connected. Jarvis can read your email and calendar, and send or add things after you say yes."
       : "Connected, read-only. Jarvis can read your email and calendar but can't send or change anything.";
   }
-  else if (savedId) el.textContent = (googleToken ? "Sign-in expired. Tap Connect Google." : "Client ID saved. Tap Connect Google.") + ` (ID starts with ${savedId.slice(0, 12)}...)`;
+  else if (savedId && googleRemembered) el.textContent = "Jarvis reconnects to Google by itself the first time you tap the circle or send something.";
+  else if (savedId) el.textContent = "Client ID saved. Tap Connect Google." + ` (ID starts with ${savedId.slice(0, 12)}...)`;
   else {
     el.textContent = "Not connected. Paste your Google OAuth client ID, then tap Connect Google. ";
     const a = document.createElement("a");
@@ -354,21 +373,65 @@ async function prepareGoogle() {
       // Don't fold in access granted earlier; the token carries only what's asked for now.
       include_granted_scopes: false,
       callback: (resp) => {
-        if (resp.error) { renderGoogleStatus("Google sign-in didn't finish: " + resp.error); return; }
+        if (resp.error) { connectFailed(resp.error); return; }
         googleToken = {
           access_token: resp.access_token,
           expires_at: Date.now() + resp.expires_in * 1000,
           scopes: new Set(String(resp.scope || "").split(" ")),
         };
+        googleRemembered = true;
+        store.set("googleRemember", "on");
+        rememberAccount();
         renderGoogleStatus();
-        addMsg("bot", "Google is connected. Ask me about your email or calendar.");
+        const missing = allowActions && !(hasScope(SCOPE.gmailSend) && hasScope(SCOPE.calendarWrite));
+        if (missing) addMsg("bot", "Google didn't give me permission to send email or add events. Tap Connect Google and tick every box Google shows.");
+        else if (!autoConnect) addMsg("bot", "Google is connected. Ask me about your email or calendar.");
+        connectDone();
       },
-      error_callback: (err) => renderGoogleStatus("Google sign-in was closed or blocked (" + (err?.type || "unknown") + ")."),
+      error_callback: (err) => connectFailed(err?.type || "unknown"),
     });
   } catch {
     tokenClient = null;
     renderGoogleStatus("I couldn't load Google sign-in. Check your internet connection.");
   }
+}
+
+// Opens Google's sign-in window. Must be called straight from a tap, or the browser blocks the window.
+function connectGoogle({ auto = false } = {}) {
+  if (!tokenClient || connecting) return !!connecting;
+  autoConnect = auto;
+  connecting = new Promise((resolve) => { finishConnect = resolve; });
+  const hint = store.get("googleEmail");
+  try {
+    tokenClient.requestAccessToken({ prompt: "", scope: wantedScopes(), include_granted_scopes: false, ...(hint ? { login_hint: hint } : {}) });
+  } catch { connectFailed("popup_failed_to_open"); }
+  return true;
+}
+// Called from taps: if you've connected before and the sign-in is gone, reconnect without a trip to Settings.
+function ensureGoogle() {
+  return googleRemembered && !googleConnected() && !connecting && connectGoogle({ auto: true });
+}
+function connectDone() {
+  const done = finishConnect, next = afterConnect;
+  connecting = null; finishConnect = null; afterConnect = null; autoConnect = false;
+  done?.();
+  next?.();
+}
+const waitForGoogle = () => connecting ? Promise.race([connecting, new Promise((r) => setTimeout(r, 60000))]) : null;
+function connectFailed(code) {
+  const advice = {
+    popup_failed_to_open: "Your browser blocked Google's sign-in window. Turn off Block Pop-ups (Settings > Apps > Safari), then tap Connect Google.",
+    popup_closed: "The Google sign-in window was closed before it finished. Tap Connect Google to try again.",
+    access_denied: "Google didn't allow the sign-in. Use the Google account that's listed as a test user, allow every box Google shows, and try again.",
+  }[code] || `Google sign-in didn't finish (${code}). Tap Connect Google to try again.`;
+  const homeScreen = fromHomeScreen ? " If Google says it couldn't sign you in, open Jarvis in Safari instead of from the Home Screen icon." : "";
+  renderGoogleStatus(advice + homeScreen);
+  if (!autoConnect || code !== "popup_closed") addMsg("bot", advice + homeScreen);
+  connectDone();
+}
+// Remember which address signed in, so the next reconnect goes straight to that account.
+async function rememberAccount() {
+  try { const me = await googleFetch(`${GMAIL}/profile`); if (me?.emailAddress) store.set("googleEmail", me.emailAddress); } catch {}
 }
 
 class GoogleAuthError extends Error {}
@@ -725,6 +788,7 @@ async function handle(raw, { tapped = false } = {}) {
     if (isYes) {
       busy = true; sendBtn.disabled = true;
       setState("thinking", "Working");
+      await waitForGoogle();
       let say;
       try { const out = await action.run(); say = out.say; pendingNote = out.note; }
       catch (err) {
@@ -755,6 +819,7 @@ async function handle(raw, { tapped = false } = {}) {
   busy = true; sendBtn.disabled = true;
   setState("thinking", "Thinking");
   const bubble = addMsg("bot pending", "Thinking...");
+  await waitForGoogle();
   const reply = await askClaude(command);
   bubble.classList.remove("pending");
   bubble.textContent = reply;
@@ -794,7 +859,7 @@ function addConfirmButtons(bubble) {
   for (const [label, reply, cls] of [["Yes", "yes", "send"], ["No", "no", "toggle"]]) {
     const b = document.createElement("button");
     b.type = "button"; b.className = cls; b.textContent = label;
-    b.onclick = () => handle(reply, { tapped: true });
+    b.onclick = () => { if (reply === "yes") ensureGoogle(); handle(reply, { tapped: true }); };
     row.appendChild(b);
   }
   bubble.appendChild(row);
@@ -807,10 +872,11 @@ $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value;
   input.value = "";
+  ensureGoogle();
   handle(text);
 });
 log.addEventListener("click", (e) => {
-  if (e.target.classList.contains("chip")) handle(e.target.textContent);
+  if (e.target.classList.contains("chip")) { ensureGoogle(); handle(e.target.textContent); }
 });
 
 // ---------- settings ----------
@@ -890,25 +956,32 @@ $("connectGoogle").onclick = () => {
   if (!store.get("googleClientId") && $("googleClientId").value.trim()) saveClientId();
   if (!store.get("googleClientId")) { renderGoogleStatus("Paste your Google OAuth client ID and tap Save ID first."); return; }
   if (!tokenClient) { renderGoogleStatus("Google sign-in is still loading. Tap Connect Google again in a moment."); prepareGoogle(); return; }
-  tokenClient.requestAccessToken({ prompt: "", scope: wantedScopes(), include_granted_scopes: false });
+  if (!connecting) googleToken = null;
+  connectGoogle();
 };
 // Revoking the token also removes Jarvis's access from the Google account, so the next Connect asks again.
 function disconnectGoogle() {
   if (googleToken && window.google?.accounts?.oauth2) { try { google.accounts.oauth2.revoke(googleToken.access_token, () => {}); } catch {} }
   googleToken = null;
+  googleRemembered = false;
+  store.set("googleRemember", null);
+  store.set("googleEmail", null);
   pending = null;
   clearConfirmButtons();
   renderGoogleStatus();
 }
 $("disconnectGoogle").onclick = () => { disconnectGoogle(); addMsg("bot", "Google is disconnected."); };
 $("allowActions").checked = allowActions;
+// Changing this needs a new Google sign-in with different permissions. The switch itself is a tap,
+// so ask Google right away rather than revoking access first, which could collide with the next sign-in.
 $("allowActions").onchange = (e) => {
   allowActions = e.target.checked;
   store.set("allowActions", allowActions ? "on" : "off");
-  if (googleConnected()) {
-    disconnectGoogle();
-    addMsg("bot", "Tap Connect Google again so the change takes effect.");
-  }
+  if (!googleConnected() && !googleRemembered) return;
+  googleToken = null;
+  pending = null;
+  clearConfirmButtons();
+  if (!connectGoogle()) addMsg("bot", "Tap Connect Google so the change takes effect.");
 };
 $("clearAll").onclick = () => {
   disconnectGoogle();
