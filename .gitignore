@@ -6,3 +6,24 @@ venv/
 build/
 dist/
 .pytest_cache/
+
+# Secrets: never commit keys, tokens or credentials
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+client_secret*.json
+credentials*.json
+token*.json
+service-account*.json
+secrets/
+.jarvis_notes.txt
+
+# OS and editor clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
