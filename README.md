@@ -31,9 +31,12 @@ voice under **Settings → Voice**; the choice is saved in that browser.
 
 ### Gmail and Calendar setup
 
-The web version can check your calendar, add events, search and read your
-email, and send email. Adding an event or sending an email only happens after
-you say "yes" (or tap Yes).
+The web version can check your calendar and search and read your email. It
+asks Google for read-only access by default. To let it send email and add
+calendar events too, turn on **Let Jarvis send email and add calendar events**
+in Settings and connect again. Even then, nothing is sent or added until you
+confirm the details it shows you. If the email address came from an email
+rather than from you, you have to tap **Yes**; saying "yes" isn't enough.
 
 It signs in to Google with your own OAuth client ID. Create one once, in
 Safari or any browser:
@@ -53,9 +56,21 @@ Safari or any browser:
    **Connect Google**. Google warns that the app isn't verified, because it's
    your own private app: tap **Continue** and allow access.
 
-Google's sign-in lasts about an hour. When it runs out, Jarvis asks you to tap
-**Connect Google** again. The sign-in stays in your browser; nothing is sent
-anywhere except Google and, for answering your questions, Anthropic's API.
+Google's sign-in is kept only in memory: tap **Connect Google** each time you
+open Jarvis, and again if it runs out after about an hour. Nothing is sent
+anywhere except Google and, for answering your questions, Anthropic's API. The
+page's Content Security Policy blocks every other site, and Anthropic's SDK is
+served from this repository (`docs/vendor/`) rather than a CDN.
+
+### Security
+
+- Your Anthropic key and Google client ID are stored only in your browser.
+  **Settings → Clear all keys** removes them and disconnects Google.
+- Email and calendar content is treated as untrusted: it's never shown as
+  HTML, and Jarvis is told never to follow instructions found in it.
+- Jarvis can't delete, forward, archive or change email, or change or delete
+  calendar events.
+- Never commit keys or credential files; `.gitignore` blocks the common ones.
 
 ## Built-in skills
 
