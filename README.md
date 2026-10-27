@@ -56,11 +56,12 @@ Safari or any browser:
    **Connect Google**. Google warns that the app isn't verified, because it's
    your own private app: tap **Continue** and allow access.
 
-Google's sign-in is kept only in memory, never on the device. After you
-connect once, Jarvis remembers that you did (and which address you used) and
-reconnects by itself the first time you tap the circle or send something,
-including after the sign-in runs out (about an hour). If you already allowed
-access, Google's window just opens and closes. **Disconnect Google** stops this. Nothing is sent
+Jarvis stays signed in to Google on that device until you tap **Disconnect
+Google**: the sign-in and your Google address are saved in the browser. Google
+makes each sign-in run out after about an hour, and a site without its own
+server can't renew it silently, so Jarvis renews it the next time you tap the
+circle or send something. Because you already allowed access, Google's window
+just opens and closes. Nothing is sent
 anywhere except Google and, for answering your questions, Anthropic's API. The
 page's Content Security Policy blocks every other site, and Anthropic's SDK is
 served from this repository (`docs/vendor/`) rather than a CDN.

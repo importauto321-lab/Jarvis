@@ -315,10 +315,20 @@ const wantedScopes = () => (allowActions
   ? [SCOPE.gmailRead, SCOPE.gmailSend, SCOPE.calendarWrite]
   : [SCOPE.gmailRead, SCOPE.calendarRead]).join(" ");
 let tokenClient = null;
-// The Google sign-in lives only in memory, so it's gone when Jarvis is closed. Older versions saved it; remove that copy.
+// The Google sign-in is saved on this device so you stay signed in until you tap Disconnect Google.
+// Google makes each sign-in run out after about an hour; then Jarvis renews it on your next tap.
 let googleToken = null; // { access_token, expires_at, scopes: Set }
-store.set("googleToken", null);
-// What is remembered is only that you connected, and with which address, so Jarvis can reconnect on your first tap.
+function setGoogleToken(token) {
+  googleToken = token;
+  store.set("googleToken", token ? JSON.stringify({ ...token, scopes: [...token.scopes] }) : null);
+}
+try {
+  const saved = JSON.parse(store.get("googleToken", "null"));
+  // Copies saved by older versions have no scope list; drop them and any that have run out.
+  if (saved?.access_token && Array.isArray(saved.scopes) && saved.expires_at > Date.now() + 30000) googleToken = { ...saved, scopes: new Set(saved.scopes) };
+  else store.set("googleToken", null);
+} catch { store.set("googleToken", null); }
+// Also remembered: that you connected, and with which address, so Jarvis can renew the sign-in on your first tap.
 let googleRemembered = store.get("googleRemember") === "on";
 let connecting = null;      // resolves when an open sign-in window finishes
 let finishConnect = null;
@@ -338,7 +348,7 @@ function renderGoogleStatus(note) {
       ? "Connected. Jarvis can read your email and calendar, and send or add things after you say yes."
       : "Connected, read-only. Jarvis can read your email and calendar but can't send or change anything.";
   }
-  else if (savedId && googleRemembered) el.textContent = "Jarvis reconnects to Google by itself the first time you tap the circle or send something.";
+  else if (savedId && googleRemembered) el.textContent = "Signed in. Google's sign-in has run out for now; Jarvis renews it by itself the next time you tap the circle or send something.";
   else if (savedId) el.textContent = "Client ID saved. Tap Connect Google." + ` (ID starts with ${savedId.slice(0, 12)}...)`;
   else {
     el.textContent = "Not connected. Paste your Google OAuth client ID, then tap Connect Google. ";
@@ -374,11 +384,11 @@ async function prepareGoogle() {
       include_granted_scopes: false,
       callback: (resp) => {
         if (resp.error) { connectFailed(resp.error); return; }
-        googleToken = {
+        setGoogleToken({
           access_token: resp.access_token,
           expires_at: Date.now() + resp.expires_in * 1000,
           scopes: new Set(String(resp.scope || "").split(" ")),
-        };
+        });
         googleRemembered = true;
         store.set("googleRemember", "on");
         rememberAccount();
@@ -445,7 +455,7 @@ async function googleFetch(url, options = {}) {
     headers: { Authorization: "Bearer " + googleToken.access_token, "Content-Type": "application/json", ...(options.headers || {}) },
   });
   if (res.status === 401) {
-    googleToken = null; renderGoogleStatus();
+    setGoogleToken(null); renderGoogleStatus();
     throw new GoogleAuthError("expired");
   }
   if (!res.ok) {
@@ -956,13 +966,13 @@ $("connectGoogle").onclick = () => {
   if (!store.get("googleClientId") && $("googleClientId").value.trim()) saveClientId();
   if (!store.get("googleClientId")) { renderGoogleStatus("Paste your Google OAuth client ID and tap Save ID first."); return; }
   if (!tokenClient) { renderGoogleStatus("Google sign-in is still loading. Tap Connect Google again in a moment."); prepareGoogle(); return; }
-  if (!connecting) googleToken = null;
+  if (!connecting) setGoogleToken(null);
   connectGoogle();
 };
 // Revoking the token also removes Jarvis's access from the Google account, so the next Connect asks again.
 function disconnectGoogle() {
   if (googleToken && window.google?.accounts?.oauth2) { try { google.accounts.oauth2.revoke(googleToken.access_token, () => {}); } catch {} }
-  googleToken = null;
+  setGoogleToken(null);
   googleRemembered = false;
   store.set("googleRemember", null);
   store.set("googleEmail", null);
@@ -978,7 +988,7 @@ $("allowActions").onchange = (e) => {
   allowActions = e.target.checked;
   store.set("allowActions", allowActions ? "on" : "off");
   if (!googleConnected() && !googleRemembered) return;
-  googleToken = null;
+  setGoogleToken(null);
   pending = null;
   clearConfirmButtons();
   if (!connectGoogle()) addMsg("bot", "Tap Connect Google so the change takes effect.");

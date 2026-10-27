@@ -28,11 +28,11 @@
     <tr><th>Item</th><th>Why</th></tr>
     <tr><td>Anthropic API key</td><td>So Jarvis can answer general questions using your own key</td></tr>
     <tr><td>Google OAuth client ID</td><td>So Jarvis can ask Google for sign-in</td></tr>
-    <tr><td>That you connected Google, and your Google email address</td><td>So Jarvis can reconnect to the same account by itself. Disconnect Google or Clear all keys removes this.</td></tr>
+    <tr><td>Google sign-in (access token), that you connected Google, and your Google email address</td><td>So you stay signed in until you tap Disconnect Google. Google makes each sign-in stop working after about an hour; Jarvis then renews it for the same account. Disconnect Google or Clear all keys removes all of this.</td></tr>
     <tr><td>Notes you ask Jarvis to take</td><td>So Jarvis can read them back to you</td></tr>
     <tr><td>Voice, sound, listening and permission settings</td><td>So your choices are remembered</td></tr>
   </table>
-  <p>Your Google sign-in, the conversation, and any email or calendar details Jarvis looks up are kept in memory only. They're gone when you close or reload the page, and they're never saved on your device.</p>
+  <p>The conversation and any email or calendar details Jarvis looks up are kept in memory only. They're gone when you close or reload the page, and they're never saved on your device.</p>
 
   <h2>What Jarvis sends, and to whom</h2>
   <ul>
@@ -54,7 +54,7 @@
     <li><code>gmail.send</code>: to send an email, only after you confirm it</li>
     <li><code>calendar.events</code>: to add an event, only after you confirm it</li>
   </ul>
-  <p>Jarvis can't delete, forward, archive or change your email, and has no feature to change or delete calendar events. Jarvis uses this data only to answer your requests while you're using it. It's processed in your browser and isn't stored. It's sent only to Anthropic, as described above, to answer your question. Jarvis's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. No person reads your Google data, and Jarvis doesn't use it for advertising or to train AI models.</p>
+  <p>Jarvis can't delete, forward, archive or change your email, and has no feature to change or delete calendar events. Jarvis uses this data only to answer your requests while you're using it. It's processed in your browser and isn't stored; only the sign-in described above is kept on your device. It's sent only to Anthropic, as described above, to answer your question. Jarvis's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. No person reads your Google data, and Jarvis doesn't use it for advertising or to train AI models.</p>
 
   <h2>Removing your data</h2>
   <ul>
