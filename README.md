@@ -39,6 +39,17 @@ never sends anything itself. Saying "...saying <exact words>" works without an
 API key. On an iPad, texts to non-Apple phones need Text Message Forwarding
 from your iPhone (iPhone Settings → Apps → Messages → Text Message Forwarding).
 
+### Calling
+
+Say "call 555 123 4567" or "call Mom at 555 123 4567", and Jarvis shows the
+number with a **Call** button; tap it to start the call. It's free: the call
+goes through your own phone, and Jarvis never dials by itself. Jarvis can't see
+your contacts, so it needs the number. With an API key and Gmail connected,
+"call the person who emailed me about the invoice" works too, using a number
+from that email. On an iPad, Call offers FaceTime Audio, or a normal phone call
+through your iPhone if "Calls on Other Devices" is on (iPhone Settings → Apps →
+Phone → Calls on Other Devices).
+
 ### Gmail and Calendar setup
 
 The web version can check your calendar and search and read your email. It
