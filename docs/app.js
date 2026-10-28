@@ -249,7 +249,7 @@ const SKILLS = [
     return { say: `Good ${h < 12 ? "morning" : h < 18 ? "afternoon" : "evening"}. How can I help?` };
   }],
   [/\b(what can you do|help|commands)\b/i, () => ({
-    say: "I can tell the time and date, do arithmetic, set timers, open websites, search the web, take notes, write texts for you to send, and tell jokes. With an API key in Settings, I can answer anything else too.",
+    say: "I can tell the time and date, do arithmetic, set timers, open websites, search the web, take notes, write texts for you to send, set up phone calls, and tell jokes. With an API key in Settings, I can answer anything else too.",
   })],
   [/\bjoke\b/i, () => ({ say: JOKES[Math.floor(Math.random() * JOKES.length)] })],
   [/\bwhat(?:'s| is) the time\b|\bwhat time is it\b|^time$/i, () => ({
@@ -288,6 +288,17 @@ const SKILLS = [
     const draft = textDraft(m[1], m[2]);
     return { say: "Your text is ready. Tap Open in Messages, then tap Send.", text: draft };
   }],
+  // "Call 555 123 4567" or "call Mom at 555 123 4567". Without a number, Claude can look one up in your email.
+  [/^(?:call|phone|dial|ring)(?: up)?\s+(.+)$/i, (m) => {
+    const found = m[1].match(/(?:^|\s)(\+?[\d(][\d\s().-]*\d)$/);
+    const number = found ? phoneNumber(found[1]) : "";
+    if (!number) {
+      if (store.get("apiKey")) return null;
+      return { say: "I can't see your contacts, so tell me the number, like: call 555 123 4567." };
+    }
+    const name = m[1].slice(0, found.index).replace(/\s+(?:at|on)$/i, "").trim();
+    return { say: "Tap Call to start the call.", call: { number, name } };
+  }],
   [/\b(read|what are) (back )?my notes\b/i, () => {
     const notes = loadNotes();
     if (!notes.length) return { say: "You don't have any notes yet." };
@@ -305,15 +316,24 @@ function runSkills(command) {
   return null;
 }
 
-// ---------- texting through the Messages app ----------
-// Jarvis never sends a text itself: it fills in a new message in Messages, and you tap Send there.
+// ---------- texting and calling through the device's own apps ----------
+// Jarvis never sends a text or places a call itself: it fills them in, and you tap Send or Call.
 let textReady = null; // a draft Claude wrote this turn, shown after its reply
+let callReady = null; // a call Claude set up this turn, shown after its reply
 
-function textDraft(to, body) {
-  const who = String(to || "").trim();
+// "555 123-4567" or "+1 (555) 123 4567" becomes "5551234567" / "+15551234567"; a name becomes "".
+function phoneNumber(text) {
+  const who = String(text || "").trim();
   const digits = who.replace(/[^\d+]/g, "");
-  const isNumber = /^\+?\d{3,15}$/.test(digits) && !/[a-z]/i.test(who);
-  return { number: isNumber ? digits : "", name: isNumber ? "" : who, body: String(body || "").trim() };
+  return /^\+?\d{3,15}$/.test(digits) && !/[a-z]/i.test(who) ? digits : "";
+}
+// A number you never typed or said came from somewhere else, most likely an email.
+function userGaveNumber(number) {
+  return userSaid.some((t) => t.replace(/[^\d]/g, "").includes(number.replace(/^\+/, "")));
+}
+function textDraft(to, body) {
+  const number = phoneNumber(to);
+  return { number, name: number ? "" : String(to || "").trim(), body: String(body || "").trim() };
 }
 // Apple's Messages expects "&body=" after the number; other phones use "?body=".
 function smsLink({ number, body }) {
@@ -653,6 +673,27 @@ const GOOGLE_TOOLS = [
     },
   },
   {
+    name: "start_phone_call",
+    scopes: null, // needs no Google access
+    description: "Set up a phone call for the user. Nothing is dialed: the user sees the number and taps Call. " +
+      "Use this whenever the user asks to call or phone someone. You can't see their contacts, so you need the phone number: " +
+      "use one the user said, or one you found in their email. If you don't have it, ask them for it instead of calling this.",
+    input_schema: {
+      type: "object",
+      properties: {
+        number: { type: "string", description: "The phone number to call" },
+        name: { type: "string", description: "Who it is, if known" },
+      },
+      required: ["number"],
+    },
+    async run({ number, name }) {
+      const digits = phoneNumber(number);
+      if (!digits) throw new Error("That isn't a phone number. Ask the user for the number; Jarvis can't see their contacts.");
+      callReady = { number: digits, name: String(name || "").trim() };
+      return "The call is on the user's screen. They tap Call to start it. Tell them it's ready.";
+    },
+  },
+  {
     name: "send_email",
     scopes: [SCOPE.gmailSend],
     writes: true,
@@ -712,7 +753,8 @@ const SYSTEM = `You are ${NAME}, a friendly voice assistant. Your replies are re
   "code blocks, emoji, or URLs. If a question needs a long answer, give the key point and offer to go deeper. " +
   "You speak through the device's speaker; if the user says they can't hear you, they mean your voice, " +
   "so suggest turning the volume up and Silent Mode off. The page handles time, timers, notes and links itself.\n\n" +
-  "When the user asks to text someone, write the message with write_text_message. You can't send texts; the user taps Send in Messages.\n\n" +
+  "When the user asks to text someone, write the message with write_text_message. You can't send texts; the user taps Send in Messages. " +
+  "When the user asks to call someone, use start_phone_call. You can't see their contacts, so if you don't know the number, ask for it. You can't place calls; the user taps Call.\n\n" +
   "When you have Gmail and Calendar tools, use them to answer questions about the user's email and schedule. " +
   "Summarize emails briefly instead of reading them word for word, and say times the way people speak them. " +
   "Sending an email or adding an event only happens after the user says yes, so read back what you're about to do and ask. " +
@@ -865,6 +907,7 @@ async function handle(raw, { tapped = false } = {}) {
     const el = addMsg("bot", local.say);
     if (local.link) addLink(el, ...local.link);
     if (local.text) showTextCard(local.text);
+    if (local.call) showCallCard(local.call);
     speak(local.say, afterReply);
     return;
   }
@@ -873,12 +916,13 @@ async function handle(raw, { tapped = false } = {}) {
   setState("thinking", "Thinking");
   const bubble = addMsg("bot pending", "Thinking...");
   await waitForGoogle();
-  textReady = null;
+  textReady = null; callReady = null;
   const reply = await askClaude(command);
   bubble.classList.remove("pending");
   bubble.textContent = reply;
   let spoken = reply;
   if (textReady) { showTextCard(textReady); textReady = null; }
+  if (callReady) { showCallCard(callReady); callReady = null; }
   if (pending) { showConfirmCard(pending); spoken = reply + " " + pending.spoken; }
   log.scrollTop = log.scrollHeight;
   setState(null);
@@ -912,21 +956,31 @@ function showConfirmCard(action) {
   log.scrollTop = log.scrollHeight;
 }
 
-// Opening Messages is a link you tap, which is also your chance to check the text first.
-function showTextCard(draft) {
-  const to = draft.number || (draft.name ? `${draft.name} (pick them in Messages)` : "Pick someone in Messages");
-  const fromUser = !draft.number || userGave(draft.number) || userSaid.some((t) => t.replace(/[^\d+]/g, "").includes(draft.number.replace(/^\+/, "")));
-  const card = addCard("Text ready to send", [["To", to], ["Message", draft.body]],
-    fromUser ? "" : "You didn't type or say this number. Make sure it's someone you trust before you tap Send.");
+// Opening Messages or the call is a link you tap, which is also your chance to check it first.
+function addLinkButton(card, href, label) {
   const row = document.createElement("div");
   row.className = "confirm";
   const open = document.createElement("a");
   open.className = "send";
-  open.href = smsLink(draft);
-  open.textContent = "Open in Messages";
+  open.href = href;
+  open.textContent = label;
   row.appendChild(open);
   card.appendChild(row);
   log.scrollTop = log.scrollHeight;
+}
+
+function showTextCard(draft) {
+  const to = draft.number || (draft.name ? `${draft.name} (pick them in Messages)` : "Pick someone in Messages");
+  const fromUser = !draft.number || userGaveNumber(draft.number);
+  const card = addCard("Text ready to send", [["To", to], ["Message", draft.body]],
+    fromUser ? "" : "You didn't type or say this number. Make sure it's someone you trust before you tap Send.");
+  addLinkButton(card, smsLink(draft), "Open in Messages");
+}
+
+function showCallCard({ number, name }) {
+  const card = addCard("Ready to call", [["Who", name], ["Number", number]],
+    userGaveNumber(number) ? "" : "You didn't type or say this number. It came from your email. Make sure it's someone you trust before you call.");
+  addLinkButton(card, `tel:${number}`, "Call");
 }
 
 function addConfirmButtons(bubble) {
