@@ -48,6 +48,21 @@
       <button class="toggle" id="newChat" type="button">New conversation</button>
     </div>
     <hr>
+    <h2>Invoices</h2>
+    <p>Your business details go on every invoice. They're saved on this device.</p>
+    <div class="biz-grid">
+      <label>Business name<input id="bizName" type="text" autocomplete="organization"></label>
+      <label>Phone<input id="bizPhone" type="tel"></label>
+      <label>Email<input id="bizEmail" type="email"></label>
+      <label>Currency<input id="bizCurrency" type="text" maxlength="3" placeholder="USD"></label>
+      <label class="wide">Address<textarea id="bizAddress" rows="2"></textarea></label>
+      <label class="wide">How customers pay you (bank, Zelle, check...)<textarea id="bizPayment" rows="3"></textarea></label>
+      <label>Next invoice number<input id="bizNext" type="text" inputmode="numeric"></label>
+    </div>
+    <div class="row">
+      <button class="send" id="saveBusiness" type="button">Save business details</button>
+    </div>
+    <hr>
     <h2>Gmail and Calendar</h2>
     <p id="googleStatus">Not connected. Paste your Google OAuth client ID, then tap Connect Google. <a href="https://github.com/importauto321-lab/Jarvis#gmail-and-calendar-setup" target="_blank" rel="noopener">Setup steps</a></p>
     <div class="row">
@@ -65,7 +80,7 @@
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
     <p>Removes your Anthropic key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 11 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Page version 12 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">
@@ -82,6 +97,7 @@
       <button class="chip" type="button">Tell me a joke</button>
       <button class="chip" type="button">Text Mom saying I'm on my way</button>
       <button class="chip" type="button">Call 555 123 4567</button>
+      <button class="chip" type="button">New invoice</button>
       <button class="chip" type="button">Why is the sky blue?</button>
     </div>
   </div>
@@ -91,6 +107,48 @@
     <button class="send" id="send" type="submit">Send</button>
   </form>
 </div>
+
+<!-- Invoice editor: covers the screen while someone checks and fixes the draft. -->
+<section class="sheet" id="invoice" hidden aria-labelledby="invTitle" role="dialog">
+  <div class="sheet-inner">
+    <div class="sheet-head">
+      <h2 id="invTitle">Invoice</h2>
+      <button class="toggle" id="invClose" type="button">Close</button>
+    </div>
+    <p class="inv-help">Jarvis filled this in. Check every field before it goes out; you can change anything.</p>
+    <ul class="inv-problems" id="invProblems" hidden></ul>
+    <div class="biz-grid">
+      <label>Invoice #<input id="invNumber" type="text"></label>
+      <label>Date<input id="invDate" type="date"></label>
+      <label>Due (blank = on receipt)<input id="invDue" type="date"></label>
+      <label>Customer name<input id="invName" type="text"></label>
+      <label>Customer email<input id="invEmail" type="email"></label>
+      <label>Customer phone<input id="invPhone" type="tel"></label>
+      <label class="wide">Customer address<textarea id="invAddress" rows="2"></textarea></label>
+      <label>Vehicle (year, make, model)<input id="invVehicle" type="text"></label>
+      <label>VIN<input id="invVin" type="text" autocapitalize="characters" spellcheck="false" maxlength="20"></label>
+    </div>
+    <h3>Charges</h3>
+    <div id="invItems"></div>
+    <div class="row"><button class="toggle" id="invAddItem" type="button">Add a line</button></div>
+    <div class="biz-grid">
+      <label>Already paid (deposit)<input id="invPaid" type="text" inputmode="decimal" placeholder="0.00"></label>
+      <label class="wide">Notes on the invoice<textarea id="invNotes" rows="2"></textarea></label>
+    </div>
+    <dl class="inv-totals">
+      <dt>Subtotal</dt><dd id="invSubtotal"></dd>
+      <dt>Paid</dt><dd id="invPaidOut"></dd>
+      <dt>Balance due</dt><dd id="invBalance"></dd>
+    </dl>
+    <div class="row">
+      <button class="send" id="invPrintBtn" type="button">Print or save PDF</button>
+      <button class="toggle" id="invEmailBtn" type="button">Email it</button>
+      <button class="toggle" id="invCopyBtn" type="button">Copy text</button>
+    </div>
+  </div>
+</section>
+<!-- What gets printed. Filled in only when you tap Print. -->
+<div class="inv-print" id="invPrint"></div>
 
 </body>
 </html>

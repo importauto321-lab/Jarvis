@@ -121,7 +121,7 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; marg
   padding-block: 10px max(12px, env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line); background: var(--bg);
 }
-input[type="text"], input[type="password"], select {
+input[type="text"], input[type="password"], input[type="email"], input[type="tel"], input[type="date"], select, textarea {
   font: inherit; color: var(--ink); background: var(--surface);
   border: 1px solid var(--line); border-radius: 999px; padding: 11px 16px;
 }
@@ -132,6 +132,56 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
   border: 0; border-radius: 999px; padding: 11px 20px; cursor: pointer;
 }
 .send:disabled { opacity: 0.5; cursor: default; }
+.toggle:disabled { opacity: 0.5; cursor: default; }
+textarea { border-radius: 12px; resize: vertical; width: 100%; }
+input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Invoices: business details in Settings and the full-screen editor. */
+.biz-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.biz-grid label { display: grid; gap: 4px; font-size: 0.85rem; font-weight: 700; color: var(--muted); }
+.biz-grid label.wide { grid-column: 1 / -1; }
+/* 16px or more, or iPad Safari zooms in on every tap. */
+.biz-grid input, .biz-grid textarea { width: 100%; min-width: 0; font-weight: 400; font-size: 1rem; color: var(--ink); border-radius: 12px; }
+.sheet {
+  position: fixed; inset: 0; z-index: 10; overflow-y: auto; background: var(--bg);
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.sheet-inner { max-width: 680px; margin: 0 auto; display: grid; gap: 12px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet h2, .sheet h3 { font-family: var(--font-display); margin: 0; }
+.sheet .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.inv-help { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.inv-problems { margin: 0; padding: 10px 14px 10px 30px; border: 2px solid var(--warn); border-radius: 12px; color: var(--ink); background: var(--surface); }
+.inv-problems li { margin: 2px 0; }
+.inv-item { display: grid; grid-template-columns: 1fr 120px auto; gap: 8px; margin-bottom: 8px; }
+.inv-item input { min-width: 0; border-radius: 12px; }
+.inv-amount { text-align: right; }
+.inv-totals { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 0; padding: 12px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.inv-totals dt { color: var(--muted); }
+.inv-totals dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.inv-totals dt:last-of-type, .inv-totals dd:last-of-type { font-weight: 700; color: var(--ink); font-size: 1.1rem; }
+@media (max-width: 480px) { .inv-item { grid-template-columns: 1fr 96px; } .inv-item .toggle { grid-column: 1 / -1; justify-self: start; } }
+
+/* The printed invoice: black on white, and nothing else on the page. */
+.inv-print { display: none; }
+@media print {
+  body { background: #fff; color: #000; padding: 0; }
+  .app, .sheet { display: none !important; }
+  .inv-print { display: block; font: 11pt/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #000; }
+  .inv-print h1 { font-size: 18pt; margin: 0 0 4px; }
+  .inv-print h2 { font-size: 14pt; margin: 0 0 4px; }
+  .inv-print h3 { font-size: 11pt; margin: 14px 0 4px; }
+  .inv-print p { margin: 0; }
+  .p-head { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+  .p-meta { text-align: right; }
+  .p-to, .p-vehicle { margin-top: 12px; }
+  .p-pre { white-space: pre-wrap; }
+  .inv-print table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  .inv-print th, .inv-print td { text-align: left; padding: 6px 0; border-bottom: 1px solid #ccc; }
+  .inv-print th:last-child, .inv-print td:last-child { text-align: right; }
+  .p-sum td { border-bottom: 0; }
+  .p-total td { font-weight: 700; font-size: 12pt; border-top: 2px solid #000; border-bottom: 0; }
+}
 .problem {
   margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem;
   background: var(--surface); border: 1px solid var(--warn); color: var(--ink); overflow-wrap: anywhere;

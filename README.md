@@ -39,6 +39,19 @@ never sends anything itself. Saying "...saying <exact words>" works without an
 API key. On an iPad, texts to non-Apple phones need Text Message Forwarding
 from your iPhone (iPhone Settings → Apps → Messages → Text Message Forwarding).
 
+### Invoices
+
+First, in **Settings → Invoices**, fill in your business name, contact details,
+how customers pay you, and the next invoice number. Then say something like
+"invoice John Smith for the 2003 Accord, transport 1200, doc fee 85.50, he paid
+300 deposit". Jarvis fills in a draft and opens it on screen. Someone checks it
+and can change any field. It flags a missing name, an amount that isn't a
+number, and a mistyped VIN (it checks the VIN's check digit). Then tap
+**Print or save PDF**, **Email it** (opens Mail with the invoice as text), or
+**Copy text**. Totals are always worked out by Jarvis's own code, not by the AI.
+Saying "new invoice" opens a blank one without an API key. Drafts aren't saved,
+so finish one before closing Jarvis.
+
 ### Calling
 
 Say "call 555 123 4567" or "call Mom at 555 123 4567", and Jarvis shows the

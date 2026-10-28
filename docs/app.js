@@ -3,6 +3,7 @@ if (window.top !== window.self) {
   document.body.textContent = "Jarvis can't run inside another page. Open it directly.";
   throw new Error("framed");
 }
+import { openInvoice, makeDraft, totals, loadBusiness, vinWarning, initInvoices } from "./invoice.js";
 const $ = (id) => document.getElementById(id);
 const app = $("app"), log = $("log"), input = $("input"), sendBtn = $("send");
 const NAME = "Jarvis";
@@ -249,7 +250,7 @@ const SKILLS = [
     return { say: `Good ${h < 12 ? "morning" : h < 18 ? "afternoon" : "evening"}. How can I help?` };
   }],
   [/\b(what can you do|help|commands)\b/i, () => ({
-    say: "I can tell the time and date, do arithmetic, set timers, open websites, search the web, take notes, write texts for you to send, set up phone calls, and tell jokes. With an API key in Settings, I can answer anything else too.",
+    say: "I can tell the time and date, do arithmetic, set timers, open websites, search the web, take notes, write texts for you to send, set up phone calls, draft invoices, and tell jokes. With an API key in Settings, I can answer anything else too.",
   })],
   [/\bjoke\b/i, () => ({ say: JOKES[Math.floor(Math.random() * JOKES.length)] })],
   [/\bwhat(?:'s| is) the time\b|\bwhat time is it\b|^time$/i, () => ({
@@ -299,6 +300,10 @@ const SKILLS = [
     const name = m[1].slice(0, found.index).replace(/\s+(?:at|on)$/i, "").trim();
     return { say: "Tap Call to start the call.", call: { number, name } };
   }],
+  [/^(?:new|start an?|make an?|open an?)? ?(?:blank |new )?invoice$/i, () => {
+    openInvoice();
+    return { say: "Here's a blank invoice. Fill it in, check it, then print or email it." };
+  }],
   [/\b(read|what are) (back )?my notes\b/i, () => {
     const notes = loadNotes();
     if (!notes.length) return { say: "You don't have any notes yet." };
@@ -320,6 +325,7 @@ function runSkills(command) {
 // Jarvis never sends a text or places a call itself: it fills them in, and you tap Send or Call.
 let textReady = null; // a draft Claude wrote this turn, shown after its reply
 let callReady = null; // a call Claude set up this turn, shown after its reply
+let invoiceReady = null; // an invoice Claude drafted this turn, shown after its reply
 
 // "555 123-4567" or "+1 (555) 123 4567" becomes "5551234567" / "+15551234567"; a name becomes "".
 function phoneNumber(text) {
@@ -694,6 +700,43 @@ const GOOGLE_TOOLS = [
     },
   },
   {
+    name: "prepare_invoice",
+    scopes: null, // needs no Google access
+    description: "Draft an invoice from details the user gives. It opens on screen for someone in the office to check, edit, then print, save as PDF or email; nothing is sent. " +
+      "Use only details the user (or an email they asked you to use) actually gave. Never guess prices, fees, VINs, names or addresses; leave a field out if you don't have it. " +
+      "Give each charge as its own line item with a plain number amount. Totals are calculated by the app, not by you.",
+    input_schema: {
+      type: "object",
+      properties: {
+        customer_name: { type: "string" },
+        customer_email: { type: "string" },
+        customer_phone: { type: "string" },
+        customer_address: { type: "string" },
+        vehicle: { type: "string", description: "Year, make and model, e.g. 2019 Toyota Camry" },
+        vin: { type: "string" },
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { description: { type: "string" }, amount: { type: "number", description: "In dollars, e.g. 1200.50" } },
+            required: ["description", "amount"],
+          },
+        },
+        amount_paid: { type: "number", description: "Deposit or amount already paid, in dollars" },
+        due_date: { type: "string", description: "YYYY-MM-DD, only if the user gave one" },
+        notes: { type: "string" },
+      },
+      required: ["items"],
+    },
+    async run(input) {
+      invoiceReady = makeDraft(input);
+      const t = totals(invoiceReady);
+      const vin = vinWarning(invoiceReady.vin);
+      return `The invoice draft is on screen for the office to check. Balance due works out to ${(t.balance / 100).toFixed(2)}.` +
+        (vin ? ` Note for the user: ${vin}` : "") + " Tell them it's ready to check; mention anything that was missing.";
+    },
+  },
+  {
     name: "send_email",
     scopes: [SCOPE.gmailSend],
     writes: true,
@@ -754,7 +797,8 @@ const SYSTEM = `You are ${NAME}, a friendly voice assistant. Your replies are re
   "You speak through the device's speaker; if the user says they can't hear you, they mean your voice, " +
   "so suggest turning the volume up and Silent Mode off. The page handles time, timers, notes and links itself.\n\n" +
   "When the user asks to text someone, write the message with write_text_message. You can't send texts; the user taps Send in Messages. " +
-  "When the user asks to call someone, use start_phone_call. You can't see their contacts, so if you don't know the number, ask for it. You can't place calls; the user taps Call.\n\n" +
+  "When the user asks to call someone, use start_phone_call. You can't see their contacts, so if you don't know the number, ask for it. You can't place calls; the user taps Call. " +
+  "When the user asks for an invoice, use prepare_invoice right away with the details they gave; don't ask follow-up questions first, the office fills gaps on screen.\n\n" +
   "When you have Gmail and Calendar tools, use them to answer questions about the user's email and schedule. " +
   "Summarize emails briefly instead of reading them word for word, and say times the way people speak them. " +
   "Sending an email or adding an event only happens after the user says yes, so read back what you're about to do and ask. " +
@@ -916,13 +960,14 @@ async function handle(raw, { tapped = false } = {}) {
   setState("thinking", "Thinking");
   const bubble = addMsg("bot pending", "Thinking...");
   await waitForGoogle();
-  textReady = null; callReady = null;
+  textReady = null; callReady = null; invoiceReady = null;
   const reply = await askClaude(command);
   bubble.classList.remove("pending");
   bubble.textContent = reply;
   let spoken = reply;
   if (textReady) { showTextCard(textReady); textReady = null; }
   if (callReady) { showCallCard(callReady); callReady = null; }
+  if (invoiceReady) { showInvoiceCard(invoiceReady); invoiceReady = null; }
   if (pending) { showConfirmCard(pending); spoken = reply + " " + pending.spoken; }
   log.scrollTop = log.scrollHeight;
   setState(null);
@@ -975,6 +1020,22 @@ function showTextCard(draft) {
   const card = addCard("Text ready to send", [["To", to], ["Message", draft.body]],
     fromUser ? "" : "You didn't type or say this number. Make sure it's someone you trust before you tap Send.");
   addLinkButton(card, smsLink(draft), "Open in Messages");
+}
+
+function showInvoiceCard(draft) {
+  const t = totals(draft);
+  const fmt = (c) => { try { return new Intl.NumberFormat("en-US", { style: "currency", currency: loadBusiness().currency || "USD" }).format(c / 100); } catch { return (c / 100).toFixed(2); } };
+  const card = addCard("Invoice draft ready to check", [["Invoice", "#" + draft.number], ["Customer", draft.name], ["Vehicle", [draft.vehicle, draft.vin].filter(Boolean).join(" · ")],
+    ["Total", fmt(t.subtotal)], ["Balance due", fmt(t.balance)]], vinWarning(draft.vin));
+  const row = document.createElement("div");
+  row.className = "confirm";
+  const open = document.createElement("button");
+  open.type = "button"; open.className = "send"; open.textContent = "Open invoice";
+  open.onclick = () => openInvoice(draft);
+  row.appendChild(open);
+  card.appendChild(row);
+  openInvoice(draft);
+  log.scrollTop = log.scrollHeight;
 }
 
 function showCallCard({ number, name }) {
@@ -1126,6 +1187,7 @@ $("clearAll").onclick = () => {
   renderGoogleStatus();
   addMsg("bot", "All keys are cleared from this device, and Google is disconnected.");
 };
+initInvoices({ say: (msg) => { addMsg("bot", msg); } });
 window.jarvisReady = true;
 $("voiceToggle").onclick = () => {
   voiceOn = !voiceOn;
