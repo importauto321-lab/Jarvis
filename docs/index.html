@@ -43,6 +43,12 @@
       <select id="voicePick"><option value="">Automatic</option></select>
       <button class="toggle" id="testVoice" type="button">Test voice</button>
     </div>
+    <label class="check"><input id="geminiVoice" type="checkbox"> Speak with the Gemini voice (deep, smooth, laid back). Uses your Gemini key; the voice above is the backup.</label>
+    <label class="field" for="geminiVoicePick">Gemini voice (each one you try uses a free Gemini use)</label>
+    <div class="row">
+      <select id="geminiVoicePick"></select>
+    </div>
+    <p id="voiceStatus"></p>
     <label class="check"><input id="handsFree" type="checkbox"> Keep listening after each answer</label>
     <div class="row">
       <button class="toggle" id="newChat" type="button">New conversation</button>
@@ -74,7 +80,7 @@
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
     <p>Removes your Anthropic key, Gemini key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 14 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Page version 15 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">
