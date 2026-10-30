@@ -24,6 +24,16 @@ save. After a minute it's live at
 Built-in commands work right away. For general questions, tap **Settings** and
 paste an Anthropic API key; it's stored only in that browser.
 
+### YouTube videos
+
+To have Jarvis watch a YouTube video, get a free Gemini API key at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) and paste it
+under **Settings → YouTube videos**. Then paste a video link and ask, for
+example "summarize this https://youtu.be/..." or "what recipe do they make in
+this video?". Claude passes the link to Gemini, which watches the picture and
+sound, and Claude answers from that. The video must be public; very long videos
+may hit Gemini's limits. You still need the Anthropic key too.
+
 Tap the circle once to start a conversation: after each answer Jarvis starts
 listening again by itself, so there's nothing to press. Tap the circle (or say
 "stop listening") to pause; it also pauses after a few quiet turns. Pick a
@@ -83,15 +93,15 @@ makes each sign-in run out after about an hour, and a site without its own
 server can't renew it silently, so Jarvis renews it the next time you tap the
 circle or send something. Because you already allowed access, Google's window
 just opens and closes. Nothing is sent
-anywhere except Google and, for answering your questions, Anthropic's API. The
+anywhere except Google (including Gemini, for YouTube videos) and, for answering your questions, Anthropic's API. The
 page's Content Security Policy blocks every other site, and Anthropic's SDK is
 served from this repository (`docs/vendor/`) rather than a CDN.
 
 ### Security
 
-- Your Anthropic key and Google client ID are stored only in your browser.
+- Your Anthropic key, Gemini key and Google client ID are stored only in your browser.
   **Settings → Clear all keys** removes them and disconnects Google.
-- Email and calendar content is treated as untrusted: it's never shown as
+- Email, calendar and video content is treated as untrusted: it's never shown as
   HTML, and Jarvis is told never to follow instructions found in it.
 - Jarvis can't delete, forward, archive or change email, or change or delete
   calendar events.
