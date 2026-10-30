@@ -78,9 +78,11 @@ const chosenVoice = () => voices.find((v) => v.voiceURI === voiceURI) || null;
 // With a Gemini key, Jarvis speaks with Google's Gemini text-to-speech. The device's own (Apple) voice is the backup:
 // it's used when Gemini is switched off, slow, busy or out of free uses, and for answers about your email or calendar,
 // which stay off Google's free tier.
-const GEMINI_VOICE = "Algieba"; // Google's "Smooth" voice: a deep, relaxed male voice
+// Google's prebuilt voices, by name; the descriptions are Google's where known. Pick one by ear in Settings.
+const GEMINI_VOICES = [["Algieba", "smooth"], ["Charon", "informative"], ["Umbriel", "easy-going"], ["Algenib", ""], ["Orus", ""], ["Gacrux", ""], ["Iapetus", ""], ["Alnilam", ""]];
+let geminiVoiceName = GEMINI_VOICES.some(([n]) => n === store.get("geminiVoiceName")) ? store.get("geminiVoiceName") : "Algieba";
 const GEMINI_VOICE_MODELS = ["gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"];
-const VOICE_STYLE = "Say this in a deep, smooth, warm, laid-back voice, relaxed and unhurried:\n";
+const VOICE_STYLE = "Say this as a Black American man with a deep, smooth, warm, laid-back voice, relaxed and unhurried. Natural, not exaggerated:\n";
 let useGeminiVoice = store.get("geminiVoice") !== "off";
 let audioCtx = null;
 let currentSource = null;
@@ -119,7 +121,8 @@ function pcmToBuffer(b64, mime) {
 }
 
 async function geminiAudio(text) {
-  if (voiceCache.has(text)) return voiceCache.get(text);
+  const cacheKey = geminiVoiceName + "|" + text;
+  if (voiceCache.has(cacheKey)) return voiceCache.get(cacheKey);
   const key = store.get("geminiKey");
   let rest = 0;
   for (const model of GEMINI_VOICE_MODELS) {
@@ -132,7 +135,7 @@ async function geminiAudio(text) {
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({
           contents: [{ parts: [{ text: VOICE_STYLE + text }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_VOICE } } } },
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: geminiVoiceName } } } },
         }),
       });
       data = await res.json().catch(() => ({}));
@@ -150,7 +153,7 @@ async function geminiAudio(text) {
     const part = (data.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
     if (!part) throw new Error("Gemini sent no audio");
     const buffer = pcmToBuffer(part.inlineData.data, part.inlineData.mimeType);
-    voiceCache.set(text, buffer);
+    voiceCache.set(cacheKey, buffer);
     if (voiceCache.size > 30) voiceCache.delete(voiceCache.keys().next().value);
     return buffer;
   }
@@ -1356,9 +1359,19 @@ function renderVoiceStatus() {
   if (!store.get("geminiKey")) el.textContent = "Save a Gemini key under YouTube videos to use the Gemini voice. Until then Jarvis uses the voice above.";
   else if (!useGeminiVoice) el.textContent = "Gemini voice is off. Jarvis uses the voice above.";
   else if (resting) el.textContent = `Gemini's free voice limit is used up for now, so Jarvis is using the voice above until about ${new Date(geminiVoiceRestingUntil()).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`;
-  else el.textContent = "Gemini voice is on (Algieba: deep and smooth). The voice above is the backup, and it reads answers about your email or calendar.";
+  else el.textContent = `Gemini voice is on (${geminiVoiceName}). The Apple voice above is the backup, and it reads answers about your email or calendar.`;
 }
 $("geminiVoice").checked = useGeminiVoice;
+for (const [name, desc] of GEMINI_VOICES) $("geminiVoicePick").add(new Option(desc ? `${name} (${desc})` : name, name));
+$("geminiVoicePick").value = geminiVoiceName;
+// Hearing a voice uses one of the free Gemini uses, so it's only played when you pick one.
+$("geminiVoicePick").onchange = (e) => {
+  geminiVoiceName = e.target.value;
+  store.set("geminiVoiceName", geminiVoiceName);
+  renderVoiceStatus();
+  if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
+  speak("Hey, it's Jarvis. This is how I sound now.");
+};
 $("geminiVoice").onchange = (e) => {
   useGeminiVoice = e.target.checked;
   store.set("geminiVoice", useGeminiVoice ? "on" : "off");
