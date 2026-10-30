@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- Only Anthropic and Google can be reached; nothing else may load or run. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src https://api.anthropic.com https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<!-- Only Anthropic and Google (including Gemini, for YouTube videos) can be reached; nothing else may load or run. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src https://api.anthropic.com https://generativelanguage.googleapis.com https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -48,6 +48,15 @@
       <button class="toggle" id="newChat" type="button">New conversation</button>
     </div>
     <hr>
+    <h2>YouTube videos</h2>
+    <p>A Google Gemini API key lets Jarvis watch a YouTube video you paste a link to, then summarize it or answer questions about it. It's saved only in this browser on this device. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.</p>
+    <p id="geminiStatus"></p>
+    <div class="row">
+      <input id="geminiKey" type="password" autocomplete="off" placeholder="Gemini API key" aria-label="Gemini API key">
+      <button class="send" id="saveGemini" type="button">Save key</button>
+      <button class="toggle" id="clearGemini" type="button">Remove key</button>
+    </div>
+    <hr>
     <h2>Gmail and Calendar</h2>
     <p id="googleStatus">Not connected. Paste your Google OAuth client ID, then tap Connect Google. <a href="https://github.com/importauto321-lab/Jarvis#gmail-and-calendar-setup" target="_blank" rel="noopener">Setup steps</a></p>
     <div class="row">
@@ -64,8 +73,8 @@
     <div class="row">
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
-    <p>Removes your Anthropic key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 11 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Removes your Anthropic key, Gemini key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
+    <p>Page version 12 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">
@@ -83,6 +92,7 @@
       <button class="chip" type="button">Text Mom saying I'm on my way</button>
       <button class="chip" type="button">Call 555 123 4567</button>
       <button class="chip" type="button">Why is the sky blue?</button>
+      <button class="chip" type="button">Summarize a YouTube video</button>
     </div>
   </div>
 
