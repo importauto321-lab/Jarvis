@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+# Free-tier Flash models, tried in order. Each has its own free limit, so when one is busy
+# or used up, the next one usually still works.
+DEFAULT_MODELS = "gemini-2.5-flash,gemini-flash-latest,gemini-flash-lite-latest"
+RETRY_WAITS = [2, 5]  # seconds to wait before retrying the same model while it's busy
+MAX_WAIT = 30  # longest "try again in N seconds" Jarvis will wait out
 
 # Any YouTube link (watch, youtu.be, shorts, live, embed, mobile) becomes the standard watch URL.
 _YOUTUBE = re.compile(
@@ -52,7 +58,8 @@ def youtube_url(text: str) -> str:
     return f"https://www.youtube.com/watch?v={match.group(1)}" if match else ""
 
 
-def ask_gemini(video: str, question: str, api_key: str, model: str, timeout: float = 150) -> str:
+def _gemini_once(model: str, video: str, question: str, api_key: str, timeout: float):
+    """One request to one model. Returns (text, None) on success or (None, (status, why, wait))."""
     body = {"contents": [{"parts": [{"file_data": {"file_uri": video}}, {"text": question}]}]}
     request = urllib.request.Request(
         GEMINI_URL.format(model=model),
@@ -65,22 +72,52 @@ def ask_gemini(video: str, question: str, api_key: str, model: str, timeout: flo
             data = json.load(response)
     except urllib.error.HTTPError as exc:
         try:
-            why = json.load(exc).get("error", {}).get("message", "")
+            error = json.load(exc).get("error", {})
         except Exception:
-            why = ""
-        if exc.code == 401 or "api key" in why.lower():
-            raise VideoError("The Gemini API key didn't work. Tell the user to check GEMINI_API_KEY.") from None
-        if exc.code == 429:
-            raise VideoError("Gemini's free limit was reached. Tell the user to try again later.") from None
-        raise VideoError(f"Gemini couldn't watch that video (status {exc.code}). "
-                         f"It may be private, age-restricted or too long. {why}".strip()) from None
+            error = {}
+        # Google says how long to wait in a RetryInfo detail, like "17s".
+        delay = next((d["retryDelay"] for d in error.get("details", []) if "retryDelay" in d), None)
+        wait = float(delay.rstrip("s")) if delay else None
+        return None, (exc.code, error.get("message", ""), wait)
     except (urllib.error.URLError, TimeoutError, OSError):
         raise VideoError("Couldn't reach Gemini, or the video took too long. The internet may be down.") from None
     parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
     text = " ".join(p.get("text", "") for p in parts).strip()
     if not text:
         raise VideoError("Gemini didn't say anything about that video. It may be blocked for safety reasons.")
-    return text
+    return text, None
+
+
+def ask_gemini(video: str, question: str, api_key: str, models: str = DEFAULT_MODELS,
+               timeout: float = 150, sleep=time.sleep) -> str:
+    """Busy (overloaded or briefly rate limited) is retried, then the next free model is tried."""
+    names = [m.strip() for m in models.split(",") if m.strip()] or DEFAULT_MODELS.split(",")
+    status, why = 0, ""
+    for model in names:
+        attempt = 0
+        while True:
+            text, failure = _gemini_once(model, video, question, api_key, timeout)
+            if text:
+                return text
+            status, why, wait = failure
+            if status == 401 or "api key" in why.lower():
+                raise VideoError("The Gemini API key didn't work. Tell the user to check GEMINI_API_KEY.")
+            if not (status == 429 or status >= 500):
+                break  # this model can't do it (missing, or the video is the problem): try the next one
+            if status != 429:
+                wait = RETRY_WAITS[attempt] if attempt < len(RETRY_WAITS) else None
+            # A daily limit asks for a long wait (or none); the next model has its own limit, so move on.
+            if wait is None or wait > MAX_WAIT or attempt >= len(RETRY_WAITS):
+                break
+            sleep(wait)
+            attempt += 1
+    if status == 429:
+        raise VideoError("Gemini's free limit is used up for now on every free model. "
+                         "Tell the user to try again later, or tomorrow.")
+    if status >= 500:
+        raise VideoError("Gemini is too busy right now, even after retrying. Tell the user to try again in a few minutes.")
+    raise VideoError(f"Gemini couldn't watch that video (status {status}). "
+                     f"It may be private, age-restricted or too long. {why}".strip())
 
 
 def watch(tool_input: dict, api_key: str, model: str) -> str:

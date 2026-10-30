@@ -159,8 +159,9 @@ example `summarize this https://youtu.be/...` (use `--text` so you can paste).
 Claude passes the link to Gemini, which watches the video, and answers from
 that. Get a free Gemini key at
 [aistudio.google.com/apikey](https://aistudio.google.com/apikey). The video
-must be public. `JARVIS_GEMINI_MODEL` picks the Gemini model (default
-`gemini-flash-latest`).
+must be public. If Gemini is busy, Jarvis retries, then moves on to the next free
+Flash model. `JARVIS_GEMINI_MODEL` sets the models to try, comma-separated
+(default `gemini-2.5-flash,gemini-flash-latest,gemini-flash-lite-latest`).
 
 If the microphone or speech engine isn't available, Jarvis falls back to text
 in / printed replies automatically.

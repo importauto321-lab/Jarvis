@@ -29,7 +29,7 @@ MAX_TOOL_ROUNDS = 6
 
 class Brain:
     def __init__(self, name: str, model: str, effort: str = "low",
-                 gemini_api_key: str = "", gemini_model: str = "gemini-flash-latest") -> None:
+                 gemini_api_key: str = "", gemini_model: str = youtube.DEFAULT_MODELS) -> None:
         import anthropic
 
         self._anthropic = anthropic
@@ -100,7 +100,7 @@ class Brain:
         self.messages.clear()
 
 
-def make_brain(name: str, model: str, effort: str, gemini_api_key: str = "", gemini_model: str = "gemini-flash-latest"):
+def make_brain(name: str, model: str, effort: str, gemini_api_key: str = "", gemini_model: str = youtube.DEFAULT_MODELS):
     """Return a Brain, or None if the SDK isn't installed or no credentials are configured."""
     try:
         import anthropic  # noqa: F401

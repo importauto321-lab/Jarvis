@@ -10,8 +10,12 @@ const MODEL = "claude-opus-5-5";
 // Anthropic's official SDK, bundled into this site so no third-party server ever serves code that sees your key.
 const SDK_URL = "./vendor/anthropic-sdk-0.132.0.mjs";
 // Gemini can watch public YouTube videos; Claude asks it about one when you paste a link.
-const GEMINI_MODEL = "gemini-flash-latest";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+// Free-tier Flash models, tried in order. Each has its own free limit, so when one is busy
+// or used up, the next one usually still works.
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest"];
+const geminiUrl = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+const GEMINI_RETRY_WAITS = [2000, 5000]; // waits before retrying the same model while it's busy
+const GEMINI_MAX_WAIT = 30000; // longest "try again in N seconds" Jarvis will wait out
 
 const store = {
   get(k, d = null) { try { const v = localStorage.getItem("jarvis." + k); return v === null ? d : v; } catch { return d; } },
@@ -571,14 +575,15 @@ function youtubeUrl(text) {
   return m ? `https://www.youtube.com/watch?v=${m[1]}` : "";
 }
 
-async function askGemini(video, question) {
-  const key = store.get("geminiKey");
-  if (!key) throw new Error("No Gemini key is saved. Tell the user to open Settings and paste a Gemini API key under YouTube videos.");
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// One request to one model. Returns { text } on success, or { status, why, wait } on failure.
+async function geminiOnce(model, key, video, question) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 150000);
   let res;
   try {
-    res = await fetch(GEMINI_URL, {
+    res = await fetch(geminiUrl(model), {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ contents: [{ parts: [{ file_data: { file_uri: video } }, { text: question }] }] }),
@@ -589,14 +594,39 @@ async function askGemini(video, question) {
   } finally { clearTimeout(timer); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const why = String(data.error?.message || "");
-    if (/api key/i.test(why) || res.status === 401) throw new Error("The Gemini API key didn't work. Tell the user to check it in Settings.");
-    if (res.status === 429) throw new Error("Gemini's free limit was reached. Tell the user to try again later.");
-    throw new Error(`Gemini couldn't watch that video (status ${res.status}). It may be private, age-restricted or too long. ${why}`.trim());
+    // Google says how long to wait in a RetryInfo detail, like "17s".
+    const delay = (data.error?.details || []).find((d) => d.retryDelay)?.retryDelay;
+    return { status: res.status, why: String(data.error?.message || ""), wait: delay ? parseFloat(delay) * 1000 : null };
   }
   const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(" ").trim();
   if (!text) throw new Error("Gemini didn't say anything about that video. It may be blocked for safety reasons.");
-  return text;
+  return { text };
+}
+
+// Busy (overloaded or briefly rate limited) is retried, then the next free model is tried.
+async function askGemini(video, question) {
+  const key = store.get("geminiKey");
+  if (!key) throw new Error("No Gemini key is saved. Tell the user to open Settings and paste a Gemini API key under YouTube videos.");
+  let last = null;
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 0; ; attempt++) {
+      const out = await geminiOnce(model, key, video, question);
+      if (out.text) return out.text;
+      last = out;
+      if (/api key/i.test(out.why) || out.status === 401) throw new Error("The Gemini API key didn't work. Tell the user to check it in Settings.");
+      const busy = out.status === 429 || out.status >= 500;
+      if (!busy) break; // this model can't do it (missing, or the video is the problem): try the next one
+      const wait = out.status === 429 ? out.wait : GEMINI_RETRY_WAITS[attempt];
+      // A daily limit asks for a long wait (or none); the next model has its own limit, so move on.
+      if (wait == null || wait > GEMINI_MAX_WAIT || attempt >= GEMINI_RETRY_WAITS.length) break;
+      setState("thinking", "Gemini is busy, trying again");
+      await sleep(wait);
+      setState("thinking", "Watching the video");
+    }
+  }
+  if (last.status === 429) throw new Error("Gemini's free limit is used up for now on every free model. Tell the user to try again later, or tomorrow.");
+  if (last.status >= 500) throw new Error("Gemini is too busy right now, even after retrying. Tell the user to try again in a few minutes.");
+  throw new Error(`Gemini couldn't watch that video (status ${last.status}). It may be private, age-restricted or too long. ${last.why}`.trim());
 }
 
 const GOOGLE_TOOLS = [
