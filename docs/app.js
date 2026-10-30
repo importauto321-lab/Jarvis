@@ -74,8 +74,134 @@ loadVoices();
 if (synth) synth.addEventListener?.("voiceschanged", loadVoices);
 const chosenVoice = () => voices.find((v) => v.voiceURI === voiceURI) || null;
 
-function speak(text, then) {
-  if (!voiceOn || !synth || !text) { then?.(); return; }
+// ---------- Gemini voice ----------
+// With a Gemini key, Jarvis speaks with Google's Gemini text-to-speech. The device's own (Apple) voice is the backup:
+// it's used when Gemini is switched off, slow, busy or out of free uses, and for answers about your email or calendar,
+// which stay off Google's free tier.
+const GEMINI_VOICE = "Algieba"; // Google's "Smooth" voice: a deep, relaxed male voice
+const GEMINI_VOICE_MODELS = ["gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"];
+const VOICE_STYLE = "Say this in a deep, smooth, warm, laid-back voice, relaxed and unhurried:\n";
+let useGeminiVoice = store.get("geminiVoice") !== "off";
+let audioCtx = null;
+let currentSource = null;
+let speechId = 0;          // bumps on every new reply, so a slow Gemini answer for an old reply is never played
+const voiceCache = new Map(); // recent lines, so repeats don't use up the free limit
+
+// iPad Safari only plays sound after a tap has opened the audio, so open it on every tap (it's cheap once open).
+function unlockAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  } catch {}
+}
+document.addEventListener("pointerdown", unlockAudio, true);
+document.addEventListener("keydown", unlockAudio, true);
+
+// Google resets the free daily limits at midnight Pacific time.
+function msToPacificMidnight() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hourCycle: "h23",
+    hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date()).map((x) => [x.type, Number(x.value)]));
+  return (86400 - (parts.hour * 3600 + parts.minute * 60 + parts.second)) * 1000;
+}
+const geminiVoiceRestingUntil = () => Number(store.get("geminiVoiceRest", "0")) || 0;
+const geminiVoiceReady = () => useGeminiVoice && !!store.get("geminiKey") && !!audioCtx && Date.now() > geminiVoiceRestingUntil();
+
+function pcmToBuffer(b64, mime) {
+  const rate = Number(/rate=(\d+)/.exec(mime || "")?.[1]) || 24000;
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const samples = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+  const buffer = audioCtx.createBuffer(1, samples.length, rate);
+  const out = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) out[i] = samples[i] / 32768;
+  return buffer;
+}
+
+async function geminiAudio(text) {
+  if (voiceCache.has(text)) return voiceCache.get(text);
+  const key = store.get("geminiKey");
+  let rest = 0;
+  for (const model of GEMINI_VOICE_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000); // longer than this, the Apple voice is better
+    let res, data;
+    try {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST", signal: controller.signal, cache: "no-store", referrerPolicy: "no-referrer",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: VOICE_STYLE + text }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_VOICE } } } },
+        }),
+      });
+      data = await res.json().catch(() => ({}));
+    } finally { clearTimeout(timer); } // too slow or offline: the Apple voice speaks this one
+    if (res.status === 404) continue; // this model isn't offered (any more): try the next
+    if (res.status === 429) {
+      // Used up for today, or just too many in a minute? Google says which in the error details.
+      const details = data.error?.details || [];
+      const daily = details.some((d) => (d.violations || []).some((v) => /PerDay/i.test(v.quotaId || "")));
+      const wait = parseFloat(details.find((d) => d.retryDelay)?.retryDelay) * 1000;
+      rest = Math.max(rest, daily ? msToPacificMidnight() : (wait || 60000));
+      continue;
+    }
+    if (!res.ok) throw new Error("Gemini voice status " + res.status);
+    const part = (data.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data);
+    if (!part) throw new Error("Gemini sent no audio");
+    const buffer = pcmToBuffer(part.inlineData.data, part.inlineData.mimeType);
+    voiceCache.set(text, buffer);
+    if (voiceCache.size > 30) voiceCache.delete(voiceCache.keys().next().value);
+    return buffer;
+  }
+  // Every model is out of free uses (or none is offered): rest Gemini so replies don't wait on it.
+  store.set("geminiVoiceRest", String(Date.now() + (rest || msToPacificMidnight())));
+  renderVoiceStatus();
+  throw new Error("Gemini voice is resting");
+}
+
+async function playBuffer(buffer, then, id, text) {
+  if (audioCtx.state !== "running") await audioCtx.resume().catch(() => {});
+  if (id !== speechId) return;
+  if (audioCtx.state !== "running") { appleSpeak(text, then); return; }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(audioCtx.destination);
+  currentSource = src;
+  src.onended = () => {
+    if (currentSource === src) currentSource = null;
+    if (id !== speechId) return;
+    if (app.dataset.state === "speaking") setState(null);
+    then?.();
+  };
+  setState("speaking", "Speaking");
+  src.start();
+}
+
+const isSpeaking = () => !!currentSource || !!(synth && (synth.speaking || synth.pending));
+function stopSpeaking() {
+  speechId++;
+  if (currentSource) { const src = currentSource; currentSource = null; try { src.stop(); } catch {} }
+  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  if (app.dataset.state === "speaking") setState(null);
+}
+
+// isPrivate: the reply came from your email or calendar, so it uses the Apple voice.
+function speak(text, then, { isPrivate = false } = {}) {
+  if (!voiceOn || !text) { then?.(); return; }
+  stopSpeaking();
+  const id = speechId;
+  if (!isPrivate && geminiVoiceReady()) {
+    geminiAudio(text)
+      .then((buffer) => { if (id === speechId) playBuffer(buffer, then, id, text); })
+      .catch(() => { if (id === speechId) appleSpeak(text, then); });
+    return;
+  }
+  appleSpeak(text, then);
+}
+
+function appleSpeak(text, then) {
+  if (!synth) { then?.(); return; }
   try {
     if (synth.speaking || synth.pending) synth.cancel();
     try { synth.resume(); } catch {}
@@ -184,7 +310,7 @@ function finishSession(s) {
 
 function listen() {
   if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
-  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  if (isSpeaking()) stopSpeaking();
   const r = getRecognizer();
   // The last session hasn't finished closing: start again once it has.
   if (session) { restartWanted = true; try { r.abort(); } catch {} return; }
@@ -207,7 +333,7 @@ $("orb").onclick = () => {
     else pauseConversation();
     return;
   }
-  if (synth && synth.speaking) { synth.cancel(); setState(null); }
+  if (isSpeaking()) stopSpeaking();
   // Listening has to start right here, inside the tap, or the iPad won't open the microphone.
   conversing = handsFree;
   quietRounds = 0;
@@ -342,7 +468,7 @@ const SKILLS = [
   [/\b(read|what are) (back )?my notes\b/i, () => {
     const notes = loadNotes();
     if (!notes.length) return { say: "You don't have any notes yet." };
-    return { say: "Your latest notes: " + notes.slice(-5).map((n) => n.text).join(". ") + "." };
+    return { say: "Your latest notes: " + notes.slice(-5).map((n) => n.text).join(". ") + ".", isPrivate: true };
   }],
 ];
 
@@ -863,6 +989,7 @@ const GOOGLE_TOOLS = [
   },
 ];
 
+let privateTurn = false; // this reply used your email or calendar
 const toolAllowed = (t) => (!t.scopes || t.scopes.some(hasScope)) && (!t.writes || allowActions) && (!t.needsGemini || !!store.get("geminiKey"));
 const allowedTools = () => GOOGLE_TOOLS.filter(toolAllowed);
 
@@ -870,6 +997,7 @@ async function runTool(block) {
   const tool = GOOGLE_TOOLS.find((t) => t.name === block.name);
   try {
     if (!tool || !toolAllowed(tool)) throw new Error("That tool isn't available. Don't try it again.");
+    if (tool.scopes) privateTurn = true; // Gmail or Calendar data is in this answer
     const result = await tool.run(block.input || {});
     const text = typeof result === "string" ? result : JSON.stringify(result);
     // Calendar events can be created by anyone who invites you, so their text is untrusted too.
@@ -1048,7 +1176,7 @@ async function handle(raw, { tapped = false } = {}) {
     if (local.link) addLink(el, ...local.link);
     if (local.text) showTextCard(local.text);
     if (local.call) showCallCard(local.call);
-    speak(local.say, afterReply);
+    speak(local.say, afterReply, { isPrivate: !!local.isPrivate });
     return;
   }
 
@@ -1058,7 +1186,7 @@ async function handle(raw, { tapped = false } = {}) {
   await waitForGoogle();
   // Spoken questions can't open Google's sign-in window (that needs a tap), so offer a button instead.
   if (googleRemembered && !googleConnected() && !connecting) offerGoogleReconnect();
-  textReady = null; callReady = null;
+  textReady = null; callReady = null; privateTurn = false;
   const reply = await askClaude(command);
   bubble.classList.remove("pending");
   bubble.textContent = reply;
@@ -1069,7 +1197,7 @@ async function handle(raw, { tapped = false } = {}) {
   log.scrollTop = log.scrollHeight;
   setState(null);
   busy = false; sendBtn.disabled = false;
-  speak(spoken, afterReply);
+  speak(spoken, afterReply, { isPrivate: privateTurn });
 }
 
 // Cards show exactly what will be sent or added, as plain text.
@@ -1195,6 +1323,7 @@ $("clearKey").onclick = () => {
 function renderGeminiStatus() {
   const key = store.get("geminiKey");
   $("geminiStatus").textContent = key ? `A Gemini key is saved on this device (ends in ${key.slice(-4)}).` : "No Gemini key saved yet.";
+  renderVoiceStatus();
 }
 renderGeminiStatus();
 function saveGeminiKey() {
@@ -1220,8 +1349,23 @@ $("voicePick").onchange = (e) => {
   if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
   speak("Hi, I'm Jarvis. This is how I sound.");
 };
+function renderVoiceStatus() {
+  const el = $("voiceStatus");
+  if (!el) return;
+  const resting = Date.now() < geminiVoiceRestingUntil();
+  if (!store.get("geminiKey")) el.textContent = "Save a Gemini key under YouTube videos to use the Gemini voice. Until then Jarvis uses the voice above.";
+  else if (!useGeminiVoice) el.textContent = "Gemini voice is off. Jarvis uses the voice above.";
+  else if (resting) el.textContent = `Gemini's free voice limit is used up for now, so Jarvis is using the voice above until about ${new Date(geminiVoiceRestingUntil()).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`;
+  else el.textContent = "Gemini voice is on (Algieba: deep and smooth). The voice above is the backup, and it reads answers about your email or calendar.";
+}
+$("geminiVoice").checked = useGeminiVoice;
+$("geminiVoice").onchange = (e) => {
+  useGeminiVoice = e.target.checked;
+  store.set("geminiVoice", useGeminiVoice ? "on" : "off");
+  renderVoiceStatus();
+};
 $("testVoice").onclick = () => {
-  if (!synth) { addMsg("bot", "This browser can't speak out loud."); return; }
+  if (!synth && !geminiVoiceReady()) { addMsg("bot", "This browser can't speak out loud."); return; }
   if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
   const msg = "Hello, this is Jarvis. If you can hear me, voice is working.";
   addMsg("bot", msg); speak(msg);
@@ -1295,6 +1439,6 @@ window.jarvisReady = true;
 $("voiceToggle").onclick = () => {
   voiceOn = !voiceOn;
   store.set("voice", voiceOn ? "on" : "off");
-  if (!voiceOn && synth) { synth.cancel(); setState(null); }
+  if (!voiceOn) stopSpeaking();
   renderVoiceToggle();
 };
