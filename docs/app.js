@@ -93,12 +93,26 @@ function speak(text, then) {
 }
 
 // ---------- listening ----------
+// iPad Safari is fussy about the microphone: it often stops hearing if a new listener is started while the old one
+// is still shutting down, if listening starts outside a tap, or right as speech ends. So Jarvis keeps one listener,
+// starts it straight from your tap, waits for the old session to end before the next, and pauses after speaking.
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-let rec = null;
+let recognizer = null;    // the one listener, made on the first tap
+let session = null;       // the current listening session: { finalText, error, started }
+let restartWanted = false;
 let conversing = false;   // true from the first tap until the user pauses or goes quiet
 let quietRounds = 0;
+let silentFailures = 0;   // sessions that ended without starting or hearing anything
 const MAX_QUIET_ROUNDS = 2;
 if (!Recognition) $("hint").textContent = "This browser can't listen. Open this page in Safari or Chrome, or type below.";
+
+const MIC_ERRORS = {
+  "not-allowed": "I need microphone access. On the iPad: Settings > Apps > Safari > Microphone > Allow. Then tap the circle again.",
+  "service-not-allowed": "The iPad's speech recognition is off or blocked. Turn on Settings > General > Keyboard > Enable Dictation, then tap the circle again.",
+  "audio-capture": "I can't reach the microphone. Close anything else using it (a call, FaceTime, video or recording), then tap the circle again.",
+  "network": "Speech recognition needs the internet. Check Wi-Fi, then tap the circle again.",
+  "language-not-supported": "The iPad's speech recognition doesn't support English (US) here. Check Settings > General > Keyboard > Dictation Languages.",
+};
 
 function pauseConversation(note) {
   conversing = false;
@@ -108,81 +122,100 @@ function pauseConversation(note) {
 }
 
 function stopListening() {
-  if (rec) { try { rec.abort(); } catch {} rec = null; }
+  restartWanted = false;
+  if (recognizer && session) { try { recognizer.abort(); } catch {} }
   if (app.dataset.state === "listening") setState(null);
+}
+
+function getRecognizer() {
+  if (recognizer) return recognizer;
+  const r = new Recognition();
+  r.lang = "en-US";
+  r.interimResults = true;
+  r.continuous = false;
+  r.onstart = () => {
+    if (!session) return;
+    session.started = true;
+    setState("listening", "Listening");
+  };
+  r.onresult = (e) => {
+    if (!session) return;
+    let text = "";
+    for (const res of e.results) text += res[0].transcript;
+    input.value = text;
+    if (e.results[e.results.length - 1].isFinal) session.finalText = text;
+  };
+  r.onerror = (e) => { if (session) session.error = e.error; };
+  r.onend = () => {
+    const s = session;
+    session = null;
+    if (app.dataset.state === "listening") setState(null);
+    if (restartWanted) { restartWanted = false; setTimeout(listen, 150); return; }
+    if (s) finishSession(s);
+  };
+  recognizer = r;
+  return r;
+}
+
+function finishSession(s) {
+  const text = (s.finalText || input.value).trim();
+  input.value = "";
+  if (text) { quietRounds = 0; silentFailures = 0; handle(text); return; }
+  if (s.error && MIC_ERRORS[s.error]) {
+    addMsg("bot", MIC_ERRORS[s.error]);
+    pauseConversation("Tap the circle when the microphone is ready.");
+    return;
+  }
+  // Ended before it ever started, or right away: start fresh next time, and say what to try.
+  if (!s.started || s.error === "aborted") {
+    recognizer = null;
+    if (++silentFailures >= 2) {
+      silentFailures = 0;
+      addMsg("bot", "I'm having trouble hearing you. Tap the circle again. If it keeps happening, reload this page, and check that Settings > General > Keyboard > Enable Dictation is on.");
+      pauseConversation("Tap the circle to try again.");
+      return;
+    }
+  }
+  if (!conversing) { $("hint").textContent = "I didn't catch that. Tap the circle and try again."; return; }
+  // Heard nothing: listen again a couple of times, then pause so the mic isn't left on.
+  if (++quietRounds <= MAX_QUIET_ROUNDS) listen();
+  else pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again.");
 }
 
 function listen() {
   if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
   if (synth && (synth.speaking || synth.pending)) synth.cancel();
-  stopListening();
-  let finalText = "";
-  const r = new Recognition();
-  rec = r;
-  r.lang = "en-US";
-  r.interimResults = true;
-  r.continuous = false;
-  r.onresult = (e) => {
-    let text = "";
-    for (const res of e.results) text += res[0].transcript;
-    input.value = text;
-    if (e.results[e.results.length - 1].isFinal) finalText = text;
-  };
-  let blocked = false;
-  r.onerror = (e) => {
-    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-      blocked = true;
-      if (quietRounds === 0 && !input.value) {
-        addMsg("bot", "I need microphone access. Allow it when Safari asks, or in Settings > Safari > Microphone, then tap the circle again.");
-      }
-      pauseConversation("Tap the circle to keep talking.");
-    }
-  };
-  r.onend = () => {
-    if (rec === r) rec = null;
-    else if (rec) return; // a newer session already replaced this one
-    if (app.dataset.state === "listening") setState(null);
-    const text = (finalText || input.value).trim();
-    input.value = "";
-    if (text) { quietRounds = 0; handle(text); return; }
-    if (blocked || !conversing) return;
-    // Heard nothing: listen again a couple of times, then pause so the mic isn't left on.
-    if (++quietRounds <= MAX_QUIET_ROUNDS) listen();
-    else pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again.");
-  };
+  const r = getRecognizer();
+  // The last session hasn't finished closing: start again once it has.
+  if (session) { restartWanted = true; try { r.abort(); } catch {} return; }
+  session = { finalText: "", error: "", started: false };
   try {
     r.start();
-    setState("listening", "Listening");
   } catch {
-    rec = null;
-    setState(null);
+    // Safari can still think the old session is running; make a new listener and try once more.
+    recognizer = null;
+    session = null;
+    try { session = { finalText: "", error: "", started: false }; getRecognizer().start(); }
+    catch { session = null; setState(null); $("hint").textContent = "I couldn't start the microphone. Tap the circle again."; }
   }
 }
 
 $("orb").onclick = () => {
   if (app.dataset.state === "listening") {
     // Mid-sentence: send what was heard. Nothing heard yet: pause.
-    if (input.value.trim() && rec) rec.stop();
+    if (input.value.trim() && recognizer) recognizer.stop();
     else pauseConversation();
     return;
   }
   if (synth && synth.speaking) { synth.cancel(); setState(null); }
-  // Google's sign-in window would cut the microphone off, so reconnect first and listen once it's done.
-  if (ensureGoogle()) {
-    $("hint").textContent = "Reconnecting to Google. I'll start listening in a moment.";
-    afterConnect = startTalking;
-    return;
-  }
-  startTalking();
-};
-function startTalking() {
+  // Listening has to start right here, inside the tap, or the iPad won't open the microphone.
   conversing = handsFree;
   quietRounds = 0;
   $("hint").textContent = handsFree
     ? "Listening. I'll keep listening after each answer. Tap the circle to pause."
     : "Tap the circle each time you want to talk.";
   listen();
-}
+};
 
 // ---------- built-in skills ----------
 const JOKES = [
@@ -381,7 +414,6 @@ let googleRemembered = store.get("googleRemember") === "on";
 let connecting = null;      // resolves when an open sign-in window finishes
 let finishConnect = null;
 let autoConnect = false;    // true when Jarvis reconnected by itself, so it stays quiet about it
-let afterConnect = null;    // runs once sign-in finishes, e.g. start listening
 
 const googleConnected = () => !!googleToken && googleToken.expires_at > Date.now() + 30000;
 const hasScope = (scope) => googleConnected() && googleToken.scopes.has(scope);
@@ -469,11 +501,23 @@ function connectGoogle({ auto = false } = {}) {
 function ensureGoogle() {
   return googleRemembered && !googleConnected() && !connecting && connectGoogle({ auto: true });
 }
+let reconnectOffered = false;
+function offerGoogleReconnect() {
+  if (reconnectOffered) return;
+  reconnectOffered = true;
+  const note = addMsg("bot", "Google's sign-in ran out, so I can't check your email or calendar for this one.");
+  const row = document.createElement("div");
+  row.className = "confirm";
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "send"; b.textContent = "Reconnect Google";
+  b.onclick = () => { row.remove(); reconnectOffered = false; connectGoogle(); };
+  row.appendChild(b);
+  note.appendChild(row);
+}
 function connectDone() {
-  const done = finishConnect, next = afterConnect;
-  connecting = null; finishConnect = null; afterConnect = null; autoConnect = false;
+  const done = finishConnect;
+  connecting = null; finishConnect = null; autoConnect = false;
   done?.();
-  next?.();
 }
 const waitForGoogle = () => connecting ? Promise.race([connecting, new Promise((r) => setTimeout(r, 60000))]) : null;
 function connectFailed(code) {
@@ -942,7 +986,8 @@ async function askClaude(question) {
 let busy = false;
 
 function afterReply() {
-  if (conversing && handsFree && Recognition) listen();
+  // A short pause lets the iPad switch its audio from the speaker back to the microphone.
+  if (conversing && handsFree && Recognition) setTimeout(() => { if (conversing && !busy) listen(); }, 400);
 }
 
 async function handle(raw, { tapped = false } = {}) {
@@ -1011,6 +1056,8 @@ async function handle(raw, { tapped = false } = {}) {
   setState("thinking", "Thinking");
   const bubble = addMsg("bot pending", "Thinking...");
   await waitForGoogle();
+  // Spoken questions can't open Google's sign-in window (that needs a tap), so offer a button instead.
+  if (googleRemembered && !googleConnected() && !connecting) offerGoogleReconnect();
   textReady = null; callReady = null;
   const reply = await askClaude(command);
   bubble.classList.remove("pending");
