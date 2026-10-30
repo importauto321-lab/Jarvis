@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import youtube
+
 
 def _env_bool(name: str, default: bool) -> bool:
     value = os.environ.get(name)
@@ -22,7 +24,7 @@ class Config:
     model: str = field(default_factory=lambda: os.environ.get("JARVIS_MODEL", "claude-opus-5-5"))
     effort: str = field(default_factory=lambda: os.environ.get("JARVIS_EFFORT", "low"))
     gemini_api_key: str = field(default_factory=lambda: os.environ.get("GEMINI_API_KEY", "").strip())
-    gemini_model: str = field(default_factory=lambda: os.environ.get("JARVIS_GEMINI_MODEL", "gemini-flash-latest"))
+    gemini_model: str = field(default_factory=lambda: os.environ.get("JARVIS_GEMINI_MODEL", youtube.DEFAULT_MODELS))
     voice_rate: int = field(default_factory=lambda: int(os.environ.get("JARVIS_VOICE_RATE", "180")))
     notes_file: Path = field(
         default_factory=lambda: Path(os.environ.get("JARVIS_NOTES_FILE", Path.home() / ".jarvis_notes.txt"))

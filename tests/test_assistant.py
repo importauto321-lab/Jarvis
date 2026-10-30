@@ -232,3 +232,63 @@ def test_youtube_link_skips_builtin_skills(make):
     a = make(brain=brain)
     assert a.respond("help me understand https://youtu.be/dQw4w9WgXcQ") == "brain answer"
     assert a.respond("what can you do") != "brain answer"
+
+
+def gemini_plan(monkeypatch, plan):
+    """Fake Gemini: plan(model, calls) returns (status, body); returns the list of models called."""
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        model = request.full_url.split("/models/")[1].split(":")[0]
+        calls.append(model)
+        status, body = plan(model, calls)
+        if status == 200:
+            return FakeResponse(json.dumps(body).encode())
+        raise urllib.error.HTTPError(request.full_url, status, "err", {}, io.BytesIO(json.dumps(body).encode()))
+
+    monkeypatch.setattr(youtube.urllib.request, "urlopen", fake_urlopen)
+    return calls
+
+
+OK = (200, {"candidates": [{"content": {"parts": [{"text": "Trucks."}]}}]})
+BUSY = (503, {"error": {"code": 503, "message": "The model is overloaded."}})
+MISSING = (404, {"error": {"code": 404, "message": "not found"}})
+DAILY = (429, {"error": {"code": 429, "message": "Quota exceeded",
+                         "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "3600s"}]}})
+MINUTE = (429, {"error": {"code": 429, "message": "Quota exceeded",
+                          "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "12s"}]}})
+VIDEO = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+
+def test_gemini_retries_when_busy(monkeypatch):
+    calls = gemini_plan(monkeypatch, lambda m, c: BUSY if len(c) <= 2 else OK)
+    waits = []
+    assert youtube.ask_gemini(VIDEO, "q", "k", sleep=waits.append) == "Trucks."
+    assert calls == ["gemini-2.5-flash"] * 3 and waits == [2, 5]
+
+
+def test_gemini_moves_to_next_model(monkeypatch):
+    calls = gemini_plan(monkeypatch, lambda m, c: MISSING if m == "gemini-2.5-flash" else BUSY if m == "gemini-flash-latest" else OK)
+    assert youtube.ask_gemini(VIDEO, "q", "k", sleep=lambda s: None) == "Trucks."
+    assert calls == ["gemini-2.5-flash"] + ["gemini-flash-latest"] * 3 + ["gemini-flash-lite-latest"]
+
+
+def test_gemini_waits_out_a_short_rate_limit(monkeypatch):
+    calls = gemini_plan(monkeypatch, lambda m, c: MINUTE if len(c) == 1 else OK)
+    waits = []
+    assert youtube.ask_gemini(VIDEO, "q", "k", sleep=waits.append) == "Trucks."
+    assert waits == [12.0] and calls == ["gemini-2.5-flash"] * 2
+
+
+def test_gemini_daily_limit_everywhere(monkeypatch):
+    waits = []
+    calls = gemini_plan(monkeypatch, lambda m, c: DAILY)
+    with pytest.raises(youtube.VideoError, match="free limit is used up"):
+        youtube.ask_gemini(VIDEO, "q", "k", sleep=waits.append)
+    assert len(calls) == 3 and waits == []
+
+
+def test_gemini_busy_everywhere(monkeypatch):
+    gemini_plan(monkeypatch, lambda m, c: BUSY)
+    with pytest.raises(youtube.VideoError, match="too busy"):
+        youtube.ask_gemini(VIDEO, "q", "k", models="a,b", sleep=lambda s: None)
