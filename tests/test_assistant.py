@@ -128,3 +128,107 @@ def test_run_loop(make):
     assert said[2] == "Yes?"
     assert said[4].startswith("Goodbye")
     assert len(said) == 5
+
+
+# --- YouTube videos ------------------------------------------------------------
+
+import io
+import json
+import urllib.error
+from types import SimpleNamespace
+
+from jarvis import youtube
+from jarvis.brain import Brain
+
+
+def test_youtube_url_forms():
+    want = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    for link in ["https://youtu.be/dQw4w9WgXcQ?si=abc", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=5",
+                 "youtube.com/watch?feature=share&v=dQw4w9WgXcQ", "https://m.youtube.com/shorts/dQw4w9WgXcQ",
+                 "summarize this https://www.youtube.com/live/dQw4w9WgXcQ please"]:
+        assert youtube.youtube_url(link) == want
+    assert youtube.youtube_url("https://example.com/watch?v=dQw4w9WgXcQ") == ""
+    assert youtube.youtube_url("https://youtu.be/short") == ""
+
+
+class FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_ask_gemini_sends_link_and_key(monkeypatch):
+    sent = {}
+
+    def fake_urlopen(request, timeout):
+        sent["url"], sent["key"], sent["body"] = request.full_url, request.get_header("X-goog-api-key"), json.loads(request.data)
+        return FakeResponse(json.dumps({"candidates": [{"content": {"parts": [{"text": "A cat plays piano."}]}}]}).encode())
+
+    monkeypatch.setattr(youtube.urllib.request, "urlopen", fake_urlopen)
+    out = youtube.watch({"url": "https://youtu.be/dQw4w9WgXcQ", "question": "What happens?"}, "AQ.key", "gemini-flash-latest")
+    assert out == youtube.UNTRUSTED_VIDEO + "A cat plays piano."
+    assert sent["url"].endswith("/models/gemini-flash-latest:generateContent")
+    assert sent["key"] == "AQ.key"
+    assert sent["body"]["contents"][0]["parts"] == [
+        {"file_data": {"file_uri": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}, {"text": "What happens?"}]
+
+
+def test_ask_gemini_bad_key(monkeypatch):
+    def fake_urlopen(request, timeout):
+        body = io.BytesIO(json.dumps({"error": {"message": "API key not valid."}}).encode())
+        raise urllib.error.HTTPError(request.full_url, 400, "Bad Request", {}, body)
+
+    monkeypatch.setattr(youtube.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(youtube.VideoError, match="key didn't work"):
+        youtube.ask_gemini("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "q", "bad", "m")
+
+
+class FakeMessages:
+    def __init__(self, replies):
+        self.replies, self.calls = list(replies), []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.replies.pop(0)
+
+
+def make_brain_with(replies, gemini_api_key="AQ.key"):
+    brain = Brain.__new__(Brain)
+    brain._anthropic = None
+    brain.model, brain.effort, brain.messages = "m", "low", []
+    brain.gemini_api_key, brain.gemini_model = gemini_api_key, "gemini-flash-latest"
+    brain.tools = [youtube.TOOL] if gemini_api_key else []
+    brain.system = "s"
+    brain.client = SimpleNamespace(beta=SimpleNamespace(messages=FakeMessages(replies)))
+    return brain
+
+
+def test_brain_watches_video(monkeypatch):
+    monkeypatch.setattr(youtube, "ask_gemini", lambda video, question, key, model: f"seen {video}")
+    tool_use = SimpleNamespace(type="tool_use", id="t1", name="watch_youtube_video",
+                               input={"url": "https://youtu.be/dQw4w9WgXcQ", "question": "Summarize"})
+    brain = make_brain_with([
+        SimpleNamespace(stop_reason="tool_use", content=[tool_use]),
+        SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="It's a song.")]),
+    ])
+    assert brain.ask("summarize https://youtu.be/dQw4w9WgXcQ") == "It's a song."
+    calls = brain.client.beta.messages.calls
+    assert [t["name"] for t in calls[0]["tools"]] == ["watch_youtube_video"]
+    result = brain.messages[2]["content"][0]  # user question, tool call, tool result, answer
+    assert result["tool_use_id"] == "t1" and "seen https://www.youtube.com/watch?v=dQw4w9WgXcQ" in result["content"]
+    assert result["content"].startswith(youtube.UNTRUSTED_VIDEO)
+
+
+def test_brain_without_gemini_key_offers_no_tools():
+    brain = make_brain_with([SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="hi")])], "")
+    brain.ask("hello")
+    assert "tools" not in brain.client.beta.messages.calls[0]
+
+
+def test_youtube_link_skips_builtin_skills(make):
+    brain = FakeBrain()
+    a = make(brain=brain)
+    assert a.respond("help me understand https://youtu.be/dQw4w9WgXcQ") == "brain answer"
+    assert a.respond("what can you do") != "brain answer"

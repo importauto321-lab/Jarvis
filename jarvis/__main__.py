@@ -48,7 +48,8 @@ def main(argv=None) -> int:
         except Exception as exc:  # missing pyttsx3 / no speech engine
             print(f"Text-to-speech unavailable ({exc}); printing replies instead.", file=sys.stderr)
 
-    brain = None if args.no_ai else make_brain(config.name, config.model, config.effort)
+    brain = None if args.no_ai else make_brain(config.name, config.model, config.effort,
+                                              config.gemini_api_key, config.gemini_model)
     if brain is None and not args.no_ai:
         print("No Anthropic credentials found; general questions are disabled.", file=sys.stderr)
 
