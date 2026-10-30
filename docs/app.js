@@ -1096,6 +1096,8 @@ renderKeyStatus();
 function saveKey() {
   const key = $("apiKey").value.replace(/\s+/g, "");
   if (!key) return;
+  // A Google key pasted in the Anthropic box is meant for YouTube videos, so save it there.
+  if (/^(AQ\.|AIza)/.test(key)) { $("apiKey").value = ""; $("geminiKey").value = key; saveGeminiKey(); return; }
   if (!key.startsWith("sk-ant-")) { addMsg("bot", "That doesn't look like an Anthropic API key. It starts with sk-ant-. Copy the whole key and paste it again."); return; }
   clientPromise = null;
   const ok = store.set("apiKey", key) && store.get("apiKey") === key;
@@ -1125,7 +1127,7 @@ function saveGeminiKey() {
   const ok = store.set("geminiKey", key) && store.get("geminiKey") === key;
   $("geminiKey").value = "";
   renderGeminiStatus();
-  addMsg("bot", ok ? "Gemini key saved. Paste a YouTube link and ask me about it." : "I couldn't save the key. Turn off Private Browsing in Safari, then try again.");
+  addMsg("bot", ok ? "Gemini key saved under YouTube videos. Paste a YouTube link and ask me about it." : "I couldn't save the key. Turn off Private Browsing in Safari, then try again.");
 }
 $("saveGemini").onclick = saveGeminiKey;
 $("geminiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveGeminiKey(); } });
