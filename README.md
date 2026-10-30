@@ -126,6 +126,7 @@ served from this repository (`docs/vendor/`) rather than a CDN.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...   # optional: enables general questions
+export GEMINI_API_KEY=...             # optional: lets Jarvis watch YouTube videos
 python -m jarvis
 ```
 
@@ -149,7 +150,17 @@ python -m jarvis --no-ai           # built-in skills only
 Environment variables: `JARVIS_NAME`, `JARVIS_WAKE_WORD`,
 `JARVIS_REQUIRE_WAKE_WORD`, `JARVIS_MODEL` (default `claude-opus-5-5`),
 `JARVIS_EFFORT` (default `low` for fast spoken replies), `JARVIS_VOICE_RATE`,
-`JARVIS_NOTES_FILE`.
+`JARVIS_NOTES_FILE`, `GEMINI_API_KEY`, `JARVIS_GEMINI_MODEL`.
+
+### YouTube videos on the computer
+
+With both keys set, type or paste a YouTube link with your question, for
+example `summarize this https://youtu.be/...` (use `--text` so you can paste).
+Claude passes the link to Gemini, which watches the video, and answers from
+that. Get a free Gemini key at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey). The video
+must be public. `JARVIS_GEMINI_MODEL` picks the Gemini model (default
+`gemini-flash-latest`).
 
 If the microphone or speech engine isn't available, Jarvis falls back to text
 in / printed replies automatically.
@@ -171,6 +182,7 @@ pass the command on to the next skill (or to Claude).
 - `jarvis/assistant.py` — wake word handling and the listen → respond loop
 - `jarvis/skills.py` — built-in skills and the `@skill` registry
 - `jarvis/brain.py` — Claude conversation fallback
+- `jarvis/youtube.py` — watching YouTube videos with Gemini, as a tool for Claude
 - `jarvis/speech.py` — microphone / keyboard input, voice / console output
 - `tests/` — `pytest`
 

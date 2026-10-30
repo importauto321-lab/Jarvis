@@ -8,6 +8,7 @@ from typing import Optional
 from .config import Config
 from .skills import Context, Exit, run_skills
 from .speech import Listener, Speaker
+from .youtube import youtube_url
 
 
 class Assistant:
@@ -29,6 +30,9 @@ class Assistant:
     def respond(self, command: str) -> str:
         """Produce a reply for a command. Raises ``Exit`` when the user says goodbye."""
         command = command.strip().rstrip(".!")
+        # A YouTube link is for Claude to watch, even if the words around it sound like a built-in command.
+        if self.brain is not None and youtube_url(command):
+            return self.brain.ask(command)
         reply = run_skills(self.context, command)
         if reply is not None:
             return reply
