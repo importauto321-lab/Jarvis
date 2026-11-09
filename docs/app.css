@@ -91,6 +91,13 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; marg
 @media (prefers-reduced-motion: reduce) {
   .app[data-state] .orb, .app[data-state] .orb::before, .app[data-state] .orb::after { animation: none; }
 }
+.mic-box { width: 100%; max-width: 560px; margin-top: 12px; padding: 10px 14px; text-align: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.mic-box.bad { border: 2px solid var(--warn); }
+.mic-box p { margin: 0 0 6px; font-size: 0.92rem; overflow-wrap: anywhere; }
+.mic-box .send { margin-top: 4px; }
+.mic-level { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 6px 0; }
+.mic-level span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 80ms linear; }
+.report { margin: 0; padding: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.78rem/1.45 ui-monospace, Menlo, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
 .orb-hint { margin: 12px 0 0; font-size: 0.9rem; color: var(--muted); text-align: center; }
 
 .log {

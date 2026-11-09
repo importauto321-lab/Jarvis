@@ -1,3 +1,4 @@
+import { startRecording, measureMic, toBase64 } from "./ears.js";
 // Refuse to run inside another site's frame, so no page can trick taps on Jarvis's buttons.
 if (window.top !== window.self) {
   document.body.textContent = "Jarvis can't run inside another page. Open it directly.";
@@ -93,26 +94,81 @@ function speak(text, then) {
 }
 
 // ---------- listening ----------
-// iPad Safari is fussy about the microphone: it often stops hearing if a new listener is started while the old one
-// is still shutting down, if listening starts outside a tap, or right as speech ends. So Jarvis keeps one listener,
-// starts it straight from your tap, waits for the old session to end before the next, and pauses after speaking.
+// Two ways to hear you. Safari's built-in speech recognition is free and instant, but Apple's Home Screen apps can't use
+// it, and it sometimes stalls on iPad. If you allow it ("Gemini ears" in Settings), Jarvis then records your voice while
+// the circle is red and has Gemini turn it into text. Every microphone problem is shown on screen with its error code.
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-let recognizer = null;    // the one listener, made on the first tap
-let session = null;       // the current listening session: { finalText, error, started }
+const inHomeScreenApp = navigator.standalone === true || !!window.matchMedia?.("(display-mode: standalone)").matches;
+let micMode = "speech";       // "speech" (Safari) or "gemini" (record, then Gemini turns it into text)
+let geminiEars = store.get("geminiEars") === "on";
+let recognizer = null;        // Safari's listener
+let session = null;           // the current listening session: { finalText, error, started, cancelled }
 let restartWanted = false;
-let conversing = false;   // true from the first tap until the user pauses or goes quiet
+let startTimer = null, endTimer = null;
+let recording = null;         // an open Gemini recording
+let earsBusy = false;         // recording ended, waiting for Gemini to return the words
+let earsCtx = null;           // audio context, opened inside a tap so iPad Safari allows it
+let conversing = false;       // true from the first tap until the user pauses or goes quiet
 let quietRounds = 0;
-let silentFailures = 0;   // sessions that ended without starting or hearing anything
 const MAX_QUIET_ROUNDS = 2;
-if (!Recognition) $("hint").textContent = "This browser can't listen. Open this page in Safari or Chrome, or type below.";
+const START_WAIT_MS = 5000, FIRST_START_WAIT_MS = 25000; // the first time, Safari may be showing a permission question
+const FALLBACK_CODES = new Set(["service-not-allowed", "not-allowed", "no-start", "start-threw", "unsupported", "language-not-supported"]);
+if (!Recognition) $("hint").textContent = geminiEars ? "Tap the circle. I'll use Gemini to hear you." : "This browser can't do speech recognition. Open this page in Safari, turn on Gemini ears in Settings, or type below.";
 
 const MIC_ERRORS = {
-  "not-allowed": "I need microphone access. On the iPad: Settings > Apps > Safari > Microphone > Allow. Then tap the circle again.",
-  "service-not-allowed": "The iPad's speech recognition is off or blocked. Turn on Settings > General > Keyboard > Enable Dictation, then tap the circle again.",
+  "not-allowed": "Safari blocked the microphone or speech recognition for this page. On the iPad: tap the aA icon in the address bar > Website Settings > Microphone > Allow. Also check Settings > Apps > Safari > Microphone.",
+  "service-not-allowed": "The iPad's speech recognition is off or blocked for this page. Turn on Settings > General > Keyboard > Enable Dictation. (Apple doesn't allow it in Home Screen apps at all.)",
   "audio-capture": "I can't reach the microphone. Close anything else using it (a call, FaceTime, video or recording), then tap the circle again.",
   "network": "Speech recognition needs the internet. Check Wi-Fi, then tap the circle again.",
   "language-not-supported": "The iPad's speech recognition doesn't support English (US) here. Check Settings > General > Keyboard > Dictation Languages.",
+  "no-start": "Safari never opened the microphone when I asked.",
+  "start-threw": "Safari wouldn't let me start listening.",
+  "unsupported": "This browser can't do speech recognition.",
+  "no-gemini-key": "To hear you with Gemini I need a Gemini key. Paste one under YouTube videos in Settings, then tap the circle.",
+  "NotAllowedError": "Safari blocked the microphone for this site. Tap the aA icon in the address bar > Website Settings > Microphone > Allow.",
+  "NotFoundError": "I can't find a microphone on this device.",
+  "NotReadableError": "Another app is using the microphone. Close it (calls, video, recording), then tap the circle again.",
+  "transcribe-failed": "I heard you, but Gemini couldn't turn it into words.",
 };
+
+// ----- on-screen status and the event log (shown by Settings > Test microphone) -----
+const micLog = [];
+const micClock = performance.now();
+function logMic(msg) {
+  micLog.push(`${((performance.now() - micClock) / 1000).toFixed(1)}s ${msg}`);
+  if (micLog.length > 60) micLog.shift();
+}
+function showMic(text, { bad = false, action = null } = {}) {
+  $("micText").textContent = text || "";
+  $("micBox").classList.toggle("bad", bad);
+  const btn = $("micAction");
+  btn.hidden = !action;
+  if (action) { btn.textContent = action.label; btn.onclick = action.run; }
+  $("micBox").hidden = !text;
+}
+function showLevel(rms, on = true) {
+  const bar = $("micLevel");
+  bar.hidden = !on;
+  bar.firstElementChild.style.width = Math.min(100, Math.round(rms * 400)) + "%";
+}
+let lastMicError = "";
+function showMicError(code, detail = "") {
+  const homeScreen = inHomeScreenApp && FALLBACK_CODES.has(code)
+    ? " You opened Jarvis from the Home Screen icon: Apple doesn't let those use speech recognition. Open Jarvis in Safari instead, or use Gemini to hear you." : "";
+  const text = `${MIC_ERRORS[code] || "Microphone problem."}${homeScreen} (error: ${code}${detail ? ": " + detail : ""})`;
+  let action = null;
+  if (FALLBACK_CODES.has(code) && !geminiEars) action = { label: "Use Gemini to hear me", run: enableGeminiEars };
+  showMic(text, { bad: true, action });
+  if (text !== lastMicError) { lastMicError = text; addMsg("bot", text); }
+}
+
+// ----- Safari's speech recognition -----
+function dropRecognizer() {
+  const r = recognizer;
+  recognizer = null; session = null; restartWanted = false;
+  clearTimeout(startTimer); clearTimeout(endTimer);
+  if (r) { try { r.abort(); } catch {} }
+}
 
 function pauseConversation(note) {
   conversing = false;
@@ -123,8 +179,10 @@ function pauseConversation(note) {
 
 function stopListening() {
   restartWanted = false;
-  if (recognizer && session) { try { recognizer.abort(); } catch {} }
+  if (recording) { recording.cancel(); }
+  if (session) { session.cancelled = true; try { recognizer?.abort(); } catch {} }
   if (app.dataset.state === "listening") setState(null);
+  showLevel(0, false);
 }
 
 function getRecognizer() {
@@ -133,25 +191,35 @@ function getRecognizer() {
   r.lang = "en-US";
   r.interimResults = true;
   r.continuous = false;
-  r.onstart = () => {
-    if (!session) return;
-    session.started = true;
-    setState("listening", "Listening");
-  };
+  const mine = () => r === recognizer && session;   // events from a listener I already dropped are ignored
+  r.onstart = () => { if (!mine()) return; logMic("event: start"); clearTimeout(startTimer); session.started = true; store.set("micStarted", "yes"); setState("listening", "Listening"); showMic("Listening. Speak now.", {}); };
+  r.onaudiostart = () => { if (mine()) { logMic("event: audiostart (microphone open)"); showMic("Listening. Speak now.", {}); } };
+  r.onsoundstart = () => { if (mine()) { logMic("event: soundstart"); showMic("I hear sound...", {}); } };
+  r.onspeechstart = () => { if (mine()) { logMic("event: speechstart"); showMic("I hear you...", {}); } };
   r.onresult = (e) => {
-    if (!session) return;
+    if (!mine()) return;
     let text = "";
     for (const res of e.results) text += res[0].transcript;
     input.value = text;
     if (e.results[e.results.length - 1].isFinal) session.finalText = text;
   };
-  r.onerror = (e) => { if (session) session.error = e.error; };
+  r.onerror = (e) => {
+    if (!mine()) return;
+    logMic(`event: error ${e.error}${e.message ? " (" + e.message + ")" : ""}`);
+    session.error = e.error;
+    // Show it now, not when the listener closes: "aborted" is just me stopping it, "no-speech" gets its own message.
+    const geminiNext = FALLBACK_CODES.has(e.error) && geminiEars && !!store.get("geminiKey");
+    if (e.error !== "aborted" && e.error !== "no-speech" && !session.cancelled && !geminiNext) showMicError(e.error);
+  };
   r.onend = () => {
+    if (r !== recognizer) return;
+    logMic("event: end");
     const s = session;
     session = null;
+    clearTimeout(startTimer); clearTimeout(endTimer);
     if (app.dataset.state === "listening") setState(null);
     if (restartWanted) { restartWanted = false; setTimeout(listen, 150); return; }
-    if (s) finishSession(s);
+    if (s && !s.cancelled) finishSession(s);
   };
   recognizer = r;
   return r;
@@ -160,62 +228,239 @@ function getRecognizer() {
 function finishSession(s) {
   const text = (s.finalText || input.value).trim();
   input.value = "";
-  if (text) { quietRounds = 0; silentFailures = 0; handle(text); return; }
-  if (s.error && MIC_ERRORS[s.error]) {
-    addMsg("bot", MIC_ERRORS[s.error]);
-    pauseConversation("Tap the circle when the microphone is ready.");
+  if (text) { quietRounds = 0; showMic(""); handle(text); return; }
+  if (s.error && s.error !== "aborted" && s.error !== "no-speech") { micFailed(s.error, "", true); return; }
+  if (!s.started) { micFailed("no-start"); return; }
+  heardNothing();
+}
+
+function heardNothing() {
+  setState(null);
+  if (conversing && ++quietRounds <= MAX_QUIET_ROUNDS) { listen(); return; }
+  if (conversing) { pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again."); showMic("I didn't hear anything (no speech), so I stopped listening. Tap the circle to talk again.", {}); return; }
+  showMic("I didn't hear anything (no speech). Tap the circle, wait for it to turn red, then speak.", {});
+}
+
+// Safari's listener didn't work. Switch to Gemini ears if that's allowed; otherwise say what happened and offer it.
+function micFailed(code, detail = "", alreadyShown = false) {
+  logMic(`failed: ${code}${detail ? " " + detail : ""}`);
+  dropRecognizer();
+  setState(null);
+  showLevel(0, false);
+  if (FALLBACK_CODES.has(code) && geminiEars && store.get("geminiKey")) {
+    micMode = "gemini";
+    const note = `Safari's speech recognition isn't working here (error: ${code}), so I'm using Gemini to hear you.`;
+    if (note !== lastMicError) { lastMicError = note; addMsg("bot", note); }
+    listenGemini(note);
     return;
   }
-  // Ended before it ever started, or right away: start fresh next time, and say what to try.
-  if (!s.started || s.error === "aborted") {
-    recognizer = null;
-    if (++silentFailures >= 2) {
-      silentFailures = 0;
-      addMsg("bot", "I'm having trouble hearing you. Tap the circle again. If it keeps happening, reload this page, and check that Settings > General > Keyboard > Enable Dictation is on.");
-      pauseConversation("Tap the circle to try again.");
-      return;
-    }
-  }
-  if (!conversing) { $("hint").textContent = "I didn't catch that. Tap the circle and try again."; return; }
-  // Heard nothing: listen again a couple of times, then pause so the mic isn't left on.
-  if (++quietRounds <= MAX_QUIET_ROUNDS) listen();
-  else pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again.");
+  conversing = false; quietRounds = 0;
+  if (!alreadyShown) showMicError(code, detail);
+  $("hint").textContent = "Tap the circle to try again.";
 }
 
 function listen() {
-  if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
+  if (micMode === "gemini" || (!Recognition && geminiEars)) { micMode = "gemini"; listenGemini(); return; }
+  if (!Recognition) { micFailed("unsupported"); return; }
   if (synth && (synth.speaking || synth.pending)) synth.cancel();
   const r = getRecognizer();
-  // The last session hasn't finished closing: start again once it has.
-  if (session) { restartWanted = true; try { r.abort(); } catch {} return; }
-  session = { finalText: "", error: "", started: false };
-  try {
-    r.start();
-  } catch {
-    // Safari can still think the old session is running; make a new listener and try once more.
-    recognizer = null;
-    session = null;
-    try { session = { finalText: "", error: "", started: false }; getRecognizer().start(); }
-    catch { session = null; setState(null); $("hint").textContent = "I couldn't start the microphone. Tap the circle again."; }
-  }
-}
-
-$("orb").onclick = () => {
-  if (app.dataset.state === "listening") {
-    // Mid-sentence: send what was heard. Nothing heard yet: pause.
-    if (input.value.trim() && recognizer) recognizer.stop();
-    else pauseConversation();
+  // The last session hasn't finished closing. Ask it to, but never wait forever: Safari sometimes never reports the end.
+  if (session) {
+    restartWanted = true;
+    logMic("old session still open: asking it to stop");
+    try { r.abort(); } catch {}
+    clearTimeout(endTimer);
+    endTimer = setTimeout(() => {
+      if (!restartWanted) return;
+      logMic("old session never ended: dropping it");
+      dropRecognizer();
+      listen();
+    }, 1200);
     return;
   }
+  session = { finalText: "", error: "", started: false, cancelled: false };
+  showMic("Starting the microphone...", {});
+  try {
+    r.start();
+    logMic("start() called");
+  } catch (err) {
+    logMic(`start() threw ${err.name}: ${err.message}`);
+    // Safari can still think the old session is running; make a new listener and try once more.
+    dropRecognizer();
+    try { session = { finalText: "", error: "", started: false, cancelled: false }; getRecognizer().start(); logMic("start() called on a new listener"); }
+    catch (err2) { micFailed("start-threw", `${err2.name}: ${err2.message}`); return; }
+  }
+  // If Safari never says it started, say so instead of waiting silently.
+  clearTimeout(startTimer);
+  startTimer = setTimeout(() => {
+    if (session && !session.started) { logMic("no start event from Safari"); micFailed("no-start", `no response from Safari after ${Math.round((store.get("micStarted") ? START_WAIT_MS : FIRST_START_WAIT_MS) / 1000)} seconds`); }
+  }, store.get("micStarted") ? START_WAIT_MS : FIRST_START_WAIT_MS);
+}
+
+// ----- Gemini ears -----
+const TRANSCRIBE_PROMPT = "Transcribe the speech in this audio exactly as spoken, in English. Reply with only the spoken words: no quotes, no labels. If there is no clear speech, reply with exactly [silence].";
+function unlockEars() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!earsCtx) earsCtx = new AC();
+    if (earsCtx.state === "suspended") earsCtx.resume().catch(() => {});
+  } catch {}
+  return earsCtx;
+}
+
+async function transcribeWithGemini(wavBase64) {
+  const key = store.get("geminiKey");
+  let status = 0, why = "";
+  for (const model of GEMINI_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    let res, data;
+    try {
+      res = await fetch(geminiUrl(model), {
+        method: "POST", signal: controller.signal, cache: "no-store", referrerPolicy: "no-referrer",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: "audio/wav", data: wavBase64 } }, { text: TRANSCRIBE_PROMPT }] }], generationConfig: { temperature: 0 } }),
+      });
+      data = await res.json().catch(() => ({}));
+    } catch (err) { status = 0; why = err.name === "AbortError" ? "Gemini took too long" : "couldn't reach Gemini (offline?)"; continue; }
+    finally { clearTimeout(timer); }
+    if (res.ok) {
+      const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(" ").trim().replace(/^["']|["']$/g, "");
+      return /^\[?silence\]?\.?$/i.test(text) ? "" : text;
+    }
+    status = res.status; why = String(data.error?.message || "");
+    if (status === 401 || status === 403 || /api key/i.test(why)) throw new Error("the Gemini key didn't work. Check it in Settings.");
+  }
+  throw new Error(status === 429 ? "Gemini's free limit is used up for now. Try again in a few minutes." : `${why || "Gemini didn't answer"}${status ? " (status " + status + ")" : ""}`);
+}
+
+async function listenGemini(note = "") {
+  if (recording || earsBusy) return;
+  if (!store.get("geminiKey")) { showMicError("no-gemini-key"); conversing = false; return; }
+  const ctx = unlockEars();
+  if (!ctx || !navigator.mediaDevices?.getUserMedia) { micMode = "speech"; showMicError("unsupported"); conversing = false; return; }
+  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  setState("listening", "Listening");
+  showMic(`${note ? note + " " : ""}Listening. Speak now; I'll stop when you pause, or tap the circle to send.`, {});
+  logMic("gemini ears: opening the microphone");
+  let rec;
+  try {
+    rec = await startRecording(ctx, { onLevel: (rms) => showLevel(rms) });
+  } catch (err) {
+    setState(null); showLevel(0, false); conversing = false;
+    logMic(`gemini ears: microphone failed ${err.name}: ${err.message}`);
+    showMicError(MIC_ERRORS[err.name] ? err.name : "NotAllowedError", err.message);
+    return;
+  }
+  recording = rec;
+  logMic("gemini ears: recording");
+  const out = await rec.done;
+  recording = null;
+  showLevel(0, false);
+  logMic(`gemini ears: recording ended (${out.reason}, heard=${out.heard}, ${out.seconds.toFixed(1)}s)`);
+  if (out.reason === "cancelled") { setState(null); return; }
+  if (!out.heard) { heardNothing(); return; }
+  earsBusy = true;
+  setState("thinking", "Hearing you");
+  showMic("Turning your voice into words...", {});
+  let text = "";
+  try { text = await transcribeWithGemini(toBase64(out.wav)); }
+  catch (err) { earsBusy = false; setState(null); conversing = false; logMic(`gemini ears: ${err.message}`); showMicError("transcribe-failed", err.message); return; }
+  earsBusy = false;
+  setState(null);
+  logMic(`gemini ears: heard "${text}"`);
+  if (!text) { heardNothing(); return; }
+  quietRounds = 0;
+  showMic("");
+  handle(text);
+}
+
+function enableGeminiEars() {
+  if (!store.get("geminiKey")) { showMicError("no-gemini-key"); return; }
+  geminiEars = true;
+  store.set("geminiEars", "on");
+  $("geminiEars").checked = true;
+  micMode = "gemini";
+  addMsg("bot", "Okay. I'll use Gemini to hear you: it records your voice while the circle is red and sends that audio to Google's Gemini to turn into words. You can turn this off in Settings.");
+  startTalking();
+}
+
+// ----- the circle -----
+$("orb").onclick = () => {
+  unlockEars();   // opened inside the tap, so iPad Safari lets it run
+  if (recording) { recording.stop(); return; }              // send what was said
+  if (earsBusy) return;                                     // Gemini is still working on the last thing
+  if (app.dataset.state === "listening") {
+    if (session && session.started) {
+      // Mid-sentence: send what was heard. Nothing heard yet: pause.
+      if (input.value.trim() && recognizer) recognizer.stop();
+      else pauseConversation();
+      return;
+    }
+    setState(null);                                         // the red circle is stale: start over
+  }
   if (synth && synth.speaking) { synth.cancel(); setState(null); }
-  // Listening has to start right here, inside the tap, or the iPad won't open the microphone.
+  startTalking();   // listening has to start right here, inside the tap, or the iPad won't open the microphone
+};
+
+function startTalking() {
   conversing = handsFree;
   quietRounds = 0;
+  lastMicError = "";
   $("hint").textContent = handsFree
     ? "Listening. I'll keep listening after each answer. Tap the circle to pause."
     : "Tap the circle each time you want to talk.";
   listen();
-};
+}
+
+// ----- Settings > Test microphone -----
+async function runMicTest() {
+  unlockEars();
+  const lines = [];
+  const say = (...more) => { lines.push(...more); $("micReport").textContent = lines.join("\n"); };
+  $("micReport").hidden = false; $("copyReport").hidden = false;
+  stopListening(); dropRecognizer();
+  // Speech recognition first, because it has to start inside the tap.
+  let finished = Promise.resolve();
+  const events = [];
+  if (Recognition) {
+    const t = new Recognition();
+    t.lang = "en-US"; t.interimResults = true; t.continuous = false;
+    const t0 = performance.now();
+    const mark = (n) => events.push(`  ${((performance.now() - t0) / 1000).toFixed(1)}s ${n}`);
+    for (const n of ["start", "audiostart", "soundstart", "speechstart", "speechend", "soundend", "audioend", "nomatch"]) t["on" + n] = () => mark(n);
+    t.onresult = (e) => mark("heard: " + e.results[e.results.length - 1][0].transcript);
+    t.onerror = (e) => mark(`ERROR ${e.error}${e.message ? " (" + e.message + ")" : ""}`);
+    finished = new Promise((resolve) => {
+      t.onend = () => { mark("end"); resolve(); };
+      setTimeout(() => { try { t.abort(); } catch {} resolve(); }, 9000);
+    });
+    try { t.start(); mark("start() called"); } catch (err) { mark(`start() threw ${err.name}: ${err.message}`); }
+  }
+  say(`Jarvis page version ${$("pageVersion").textContent}`);
+  say(`Opened from: ${inHomeScreenApp ? "the Home Screen icon (app mode)" : "a Safari tab"}`);
+  say(`Device: ${navigator.userAgent}`);
+  say(`Speech recognition in this browser: ${Recognition ? "yes" : "NO"}`);
+  say(`Gemini key saved: ${store.get("geminiKey") ? "yes" : "no"}. Gemini ears: ${geminiEars ? "on" : "off"}`);
+  try { say(`Microphone permission: ${(await navigator.permissions.query({ name: "microphone" })).state}`); } catch { say("Microphone permission: Safari doesn't say"); }
+  if (Recognition) {
+    say(""); say("Speech recognition test. SAY SOMETHING NOW, like \"hello Jarvis\" (9 seconds)...");
+    await finished;
+    say(...events);
+    const err = events.find((e) => e.includes("ERROR"));
+    const heard = events.some((e) => e.includes("heard:"));
+    say(heard ? "Result: speech recognition WORKS here." : err ? `Result: Safari reported ${err.trim().split("ERROR ")[1]}.` : events.some((e) => e.includes("audiostart")) ? "Result: the microphone opened but Safari heard no words." : "Result: Safari never opened the microphone.");
+  }
+  say(""); say("Microphone level test: keep talking for 3 seconds...");
+  try {
+    const m = await measureMic(unlockEars(), 3000, (rms) => showLevel(rms));
+    say(`Microphone: ${m.tracks}`);
+    say(m.max > 0.01 ? `Result: the microphone hears sound (level ${m.max.toFixed(3)}).` : `Result: the microphone is open but hears almost nothing (level ${m.max.toFixed(3)}). Is it covered, muted or far away?`);
+  } catch (err) { say(`Result: Safari wouldn't give me the microphone (${err.name}: ${err.message}).`); }
+  showLevel(0, false);
+  say(""); say("Recent microphone events:"); say(...(micLog.length ? micLog.slice(-15).map((l) => "  " + l) : ["  (none yet)"]));
+}
 
 // ---------- built-in skills ----------
 const JOKES = [
@@ -1209,6 +1454,18 @@ function saveGeminiKey() {
 $("saveGemini").onclick = saveGeminiKey;
 $("geminiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveGeminiKey(); } });
 $("clearGemini").onclick = () => { store.set("geminiKey", null); renderGeminiStatus(); addMsg("bot", "Gemini key removed from this device."); };
+$("geminiEars").checked = geminiEars;
+$("geminiEars").onchange = (e) => {
+  geminiEars = e.target.checked;
+  store.set("geminiEars", geminiEars ? "on" : "off");
+  if (!geminiEars) micMode = "speech";
+  else if (!store.get("geminiKey")) showMicError("no-gemini-key");
+};
+$("micTest").onclick = runMicTest;
+$("copyReport").onclick = async () => {
+  try { await navigator.clipboard.writeText($("micReport").textContent); addMsg("bot", "Microphone report copied."); }
+  catch { addMsg("bot", "I couldn't copy it. Take a screenshot of the report instead."); }
+};
 $("handsFree").onchange = (e) => {
   handsFree = e.target.checked;
   store.set("handsFree", handsFree ? "on" : "off");
