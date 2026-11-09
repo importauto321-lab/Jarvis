@@ -39,6 +39,17 @@ listening again by itself, so there's nothing to press. Tap the circle (or say
 "stop listening") to pause; it also pauses after a few quiet turns. Pick a
 voice under **Settings → Voice**; the choice is saved in that browser.
 
+### Microphone trouble
+
+Tap the circle, wait for it to turn red, then talk. Whatever goes wrong is shown under the circle with an error code.
+**Settings → Test microphone** runs a short check (does Safari open the microphone, does it hear you, does speech
+recognition work) and shows a report you can copy or screenshot.
+
+Apple doesn't let Home Screen apps use Safari's speech recognition, so open Jarvis in a Safari tab, or turn on **Use
+Gemini to hear me** in Settings. Then Jarvis records your voice while the circle is red and sends that audio to Gemini
+(your Gemini key, free tier) to turn into words. It's off until you turn it on, and Jarvis offers it when Safari's
+speech recognition fails.
+
 ### Texting
 
 Ask Jarvis to text someone ("text Mom that I'm running late", or "text 555 123

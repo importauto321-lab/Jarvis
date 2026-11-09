@@ -44,6 +44,12 @@
       <button class="toggle" id="testVoice" type="button">Test voice</button>
     </div>
     <label class="check"><input id="handsFree" type="checkbox"> Keep listening after each answer</label>
+    <label class="check"><input id="geminiEars" type="checkbox"> Use Gemini to hear me when Safari can't. This records your voice while the circle is red and sends that audio to Google's Gemini (your Gemini key, free tier) to turn into words.</label>
+    <div class="row">
+      <button class="toggle" id="micTest" type="button">Test microphone</button>
+      <button class="toggle" id="copyReport" type="button" hidden>Copy report</button>
+    </div>
+    <pre class="report" id="micReport" hidden></pre>
     <div class="row">
       <button class="toggle" id="newChat" type="button">New conversation</button>
     </div>
@@ -74,11 +80,16 @@
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
     <p>Removes your Anthropic key, Gemini key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 14 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Page version <span id="pageVersion">15</span> · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">
     <button class="orb" id="orb" type="button" aria-label="Tap to talk"></button>
+    <div class="mic-box" id="micBox" role="status" aria-live="polite" hidden>
+      <p id="micText"></p>
+      <div class="mic-level" id="micLevel" hidden><span></span></div>
+      <button class="send" id="micAction" type="button" hidden></button>
+    </div>
     <p class="orb-hint" id="hint">Tap the circle once and start talking. I'll keep listening after each answer.</p>
   </div>
 
