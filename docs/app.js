@@ -357,7 +357,9 @@ function releaseMic(s) {
   try { s.source?.disconnect(); } catch {}
   s.stream?.getTracks().forEach((t) => t.stop());
   // A running audio processor keeps the iPad in "call" mode, where speech is very quiet or silent.
-  try { audioCtx?.suspend(); } catch {}
+  // Even paused, it can keep the iPad there, so close it completely; the next recording makes a new one.
+  try { audioCtx?.close(); } catch {}
+  audioCtx = null;
   setAudioMode("playback");
 }
 
@@ -409,9 +411,17 @@ function toBase64(blob) {
 
 // Gemini reliably understands WAV, so the recording becomes 16 kHz mono WAV (small, and plenty for speech).
 async function toWav(blob) {
-  const decoded = await audioCtx.decodeAudioData(await blob.arrayBuffer());
+  // Decoding with an offline context never touches the iPad's speakers or sound mode.
+  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const decoder = new Offline(1, 1, 44100);
+  const data = await blob.arrayBuffer();
+  // Older Safari only has the callback form of decodeAudioData.
+  const decoded = await new Promise((resolve, reject) => {
+    const maybe = decoder.decodeAudioData(data, resolve, reject);
+    if (maybe?.then) maybe.then(resolve, reject);
+  });
   const rate = 16000;
-  const offline = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
+  const offline = new Offline(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
   const src = offline.createBufferSource();
   src.buffer = decoded;
   src.connect(offline.destination);
