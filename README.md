@@ -56,6 +56,12 @@ much more reliable than Safari's own speech recognition, which often stops
 hearing after the first question. Turn off **Use Gemini to hear me** in
 Settings to go back to Safari's listening; then your voice isn't sent to Google.
 
+With a Gemini key, Jarvis speaks with Gemini's natural voice instead of the
+iPad's robotic one (free; pick the voice in **Settings → Voice engine**).
+His answers are sent to Google to be spoken. If Gemini is busy or its free limit
+runs out, the iPad voice takes over; choose **iPad voice** to keep answers on
+the device.
+
 Turn on **Use my location** in Settings to let Jarvis answer "what's the weather
 here?", "find a gas station near me" (a button opens Apple Maps) or "how far am I
 from...". Your location is checked only when a question needs it and sent to

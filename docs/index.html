@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!-- Only Anthropic and Google (including Gemini, for YouTube videos and hearing you) can be reached; nothing else may load or run. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src https://api.anthropic.com https://generativelanguage.googleapis.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.bigdatacloud.net https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src https://api.anthropic.com https://generativelanguage.googleapis.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.bigdatacloud.net https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -11,9 +11,9 @@
 <meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
 <title>Jarvis</title>
-<link rel="stylesheet" href="app.css?v=30">
-<script src="boot.js?v=30"></script>
-<script type="module" src="app.js?v=30"></script>
+<link rel="stylesheet" href="app.css?v=31">
+<script src="boot.js?v=31"></script>
+<script type="module" src="app.js?v=31"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -38,7 +38,15 @@
       <button class="send" id="saveKey" type="button">Save key</button>
       <button class="toggle" id="clearKey" type="button">Remove key</button>
     </div>
-    <label class="field" for="voicePick">Voice</label>
+    <label class="field" for="voiceEngine">Voice engine</label>
+    <div class="row">
+      <select id="voiceEngine"><option value="gemini">Gemini voice (natural, free)</option><option value="apple">iPad voice</option></select>
+    </div>
+    <div class="row" id="geminiVoiceRow">
+      <select id="geminiVoice" aria-label="Gemini voice"></select>
+    </div>
+    <p id="voiceEngineNote"></p>
+    <label class="field" for="voicePick">iPad voice (backup)</label>
     <div class="row">
       <select id="voicePick"><option value="">Automatic</option></select>
       <button class="toggle" id="testVoice" type="button">Test voice</button>
@@ -86,7 +94,7 @@
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
     <p>Removes your Anthropic key, Gemini key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 30 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Page version 31 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">

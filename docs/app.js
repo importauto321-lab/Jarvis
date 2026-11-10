@@ -82,6 +82,7 @@ let warnedSilent = false;
 // iPad Safari only lets a page talk if it has spoken once during a tap. Answers arrive seconds after the tap,
 // so every tap (circle, Send, suggestions) says a silent word first, which unlocks speaking for later.
 function unlockSpeech() {
+  if (voiceOn) unlockGeminiAudio();
   if (speechUnlocked || !synth || !voiceOn) return;
   try {
     const u = new SpeechSynthesisUtterance(" ");
@@ -100,11 +101,136 @@ function setAudioMode(type) {
   try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {}
 }
 
+// Jarvis's voice: Gemini's natural voice when it's chosen and a Gemini key is saved, with the iPad's own voice as backup.
+const GEMINI_VOICES = {
+  Algieba: "Smooth", Umbriel: "Easy-going", Charon: "Deep and steady", Algenib: "Gravelly",
+  Zubenelgenubi: "Casual", Orus: "Firm", Fenrir: "Lively", Iapetus: "Clear",
+};
+const GEMINI_VOICE_STYLE = "Read this aloud in a deep, smooth, relaxed, laid-back voice, with easy confidence and swagger, " +
+  "like a cool friend talking. Read only the words after the colon:\n\n";
+let geminiVoiceRestUntil = 0; // after Gemini's free voice limit runs out, use the iPad voice for a while
+let warnedVoiceLimit = false;
+const ttsAudio = typeof Audio === "function" ? new Audio() : null;
+if (ttsAudio) { ttsAudio.playsInline = true; ttsAudio.preload = "auto"; }
+let ttsUnlocked = false;
+let ttsToken = 0;        // changes whenever speech is stopped, so a late answer from Google isn't played
+let ttsFinish = null;    // ends the Gemini speech that's playing
+const useGeminiVoice = () => !!ttsAudio && store.get("voiceEngine", "gemini") === "gemini" && !!store.get("geminiKey") &&
+  Date.now() > geminiVoiceRestUntil;
+
+// 16-bit PCM from Gemini, wrapped as a WAV file Safari can play.
+function pcmToWav(pcm, rate) {
+  const head = new DataView(new ArrayBuffer(44));
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) head.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, "RIFF"); head.setUint32(4, 36 + pcm.length, true); str(8, "WAVE"); str(12, "fmt ");
+  head.setUint32(16, 16, true); head.setUint16(20, 1, true); head.setUint16(22, 1, true);
+  head.setUint32(24, rate, true); head.setUint32(28, rate * 2, true); head.setUint16(32, 2, true); head.setUint16(34, 16, true);
+  str(36, "data"); head.setUint32(40, pcm.length, true);
+  return new Blob([head.buffer, pcm], { type: "audio/wav" });
+}
+let silentWavUrl = "";
+// The iPad only lets a page play sound it started during a tap, so every tap plays a moment of silence on the same player.
+function unlockGeminiAudio() {
+  if (!ttsAudio || ttsUnlocked || ttsFinish || !store.get("geminiKey") || store.get("voiceEngine", "gemini") !== "gemini") return;
+  try {
+    silentWavUrl ||= URL.createObjectURL(pcmToWav(new Uint8Array(2400), 24000));
+    ttsAudio.src = silentWavUrl;
+    const p = ttsAudio.play();
+    if (p?.then) p.then(() => { ttsUnlocked = true; }).catch(() => {}); else ttsUnlocked = true;
+  } catch {}
+}
+function stopGeminiVoice() {
+  ttsToken++;
+  try { ttsAudio?.pause(); } catch {}
+  const f = ttsFinish; ttsFinish = null; f?.(false);
+}
+
+async function geminiSpeech(text, token) {
+  const key = store.get("geminiKey");
+  await geminiModelNames(key); // also finds Gemini's speech models
+  const models = geminiTtsAvailable?.length ? geminiPick(geminiTtsAvailable, [], false) : ["gemini-2.5-flash-preview-tts"];
+  const voiceName = GEMINI_VOICES[store.get("geminiVoice")] ? store.get("geminiVoice") : "Algieba";
+  for (const model of models) {
+    if (token !== ttsToken) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const res = await fetch(geminiUrl(model), {
+        method: "POST", signal: controller.signal,
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ parts: [{ text: GEMINI_VOICE_STYLE + text }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } } } }),
+      });
+      if (res.status === 429) { geminiVoiceRestUntil = Date.now() + 10 * 60 * 1000; return "limit"; }
+      if (!res.ok) continue;
+      const data = await res.json();
+      const part = (data.candidates?.[0]?.content?.parts || []).find((x) => x.inlineData?.data);
+      if (!part) continue;
+      const bin = atob(part.inlineData.data);
+      const pcm = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
+      const rate = Number((String(part.inlineData.mimeType).match(/rate=(\d+)/) || [])[1]) || 24000;
+      return pcmToWav(pcm, rate);
+    } catch { /* too slow or no connection: try the next model */ } finally { clearTimeout(timer); }
+  }
+  return null;
+}
+
 function speak(text, then) {
+  if (!voiceOn || !text) { then?.(); return; }
+  if (useGeminiVoice()) { speakGemini(text, then); return; }
+  speakApple(text, then);
+}
+
+async function speakGemini(text, then) {
+  stopGeminiVoice();
+  if (synth && (synth.speaking || synth.pending) && !priming) synth.cancel();
+  const token = ttsToken;
+  setState("thinking", "Getting my voice ready");
+  const wav = await geminiSpeech(text, token);
+  if (token !== ttsToken) return; // stopped while Google was working
+  if (app.dataset.state === "thinking") setState(null);
+  if (!(wav instanceof Blob)) {
+    if (wav === "limit" && !warnedVoiceLimit) {
+      warnedVoiceLimit = true;
+      $("hint").textContent = "Gemini's free voice limit is used up for now, so I'm using the iPad voice for a few minutes.";
+    }
+    speakApple(text, then);
+    return;
+  }
+  if (!session) setAudioMode("playback");
+  const url = URL.createObjectURL(wav);
+  let done = false;
+  const finish = (callThen = true) => {
+    if (done) return;
+    done = true;
+    clearTimeout(guard);
+    if (ttsFinish === finish) ttsFinish = null;
+    ttsAudio.onended = ttsAudio.onerror = null;
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (app.dataset.state === "speaking") setState(null);
+    if (callThen) then?.();
+  };
+  // PCM is 2 bytes per sample: this is how long the answer lasts, plus a margin, in case "ended" never comes.
+  const guard = setTimeout(finish, (wav.size / 48) + 5000);
+  ttsFinish = finish;
+  ttsAudio.onended = () => finish();
+  ttsAudio.onerror = () => { if (!done) { finish(false); speakApple(text, then); } };
+  try {
+    ttsAudio.src = url;
+    await ttsAudio.play();
+    if (!done) setState("speaking", "Speaking");
+  } catch {
+    // The iPad blocked it (no tap yet) or it can't play: use the iPad voice instead.
+    if (!done) { finish(false); speakApple(text, then); }
+  }
+}
+
+function speakApple(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
   if (!session) setAudioMode("playback");
   const wait = micClosedAt + 350 - Date.now();
-  if (wait > 0) { setTimeout(() => speak(text, then), wait); return; }
+  if (wait > 0) { setTimeout(() => speakApple(text, then), wait); return; }
   // Safari sometimes never says speech has finished (or started), which would stop hands-free listening for good.
   // So "done" also happens after about as long as the answer takes to say, plus a margin.
   let done = false;
@@ -220,6 +346,7 @@ function listen() {
   if (hearWithGemini()) { listenRecorded(); return; }
   if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
   if (synth && (synth.speaking || synth.pending) && !priming) synth.cancel();
+  stopGeminiVoice();
   stopListening();
   const r = new Recognition();
   r.lang = "en-US";
@@ -287,6 +414,7 @@ function wakeAudio() {
 
 async function listenRecorded() {
   if (synth && (synth.speaking || synth.pending) && !priming) synth.cancel();
+  stopGeminiVoice();
   stopListening();
   const s = { kind: "record", heard: "", finalText: "", error: "", started: false, spoke: false, timers: {}, chunks: [] };
   session = s;
@@ -461,6 +589,7 @@ $("orb").onclick = () => {
   }
   wakeAudio();
   if (synth && synth.speaking) { synth.cancel(); setState(null); }
+  if (ttsFinish) { stopGeminiVoice(); setState(null); }
   unlockSpeech();
   // Listening has to start right here, inside the tap, or the iPad won't open the microphone.
   conversing = handsFree;
@@ -941,17 +1070,21 @@ async function geminiOnce(model, key, parts, timeoutMs, generationConfig) {
 // Google adds and retires free models often, so ask which ones this key can use (once per visit).
 // The fixed lists are only a backup if that question fails.
 let geminiAvailable = null;
+let geminiTtsAvailable = null; // Gemini's text-to-speech models, for Jarvis's voice
 async function geminiModelNames(key) {
   if (geminiAvailable) return geminiAvailable;
   try {
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": key } });
     if (!res.ok) return null;
     const data = await res.json();
-    const names = (data.models || [])
+    const all = (data.models || [])
       .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
-      .map((m) => String(m.name || "").replace(/^models\//, ""))
-      // Only general Flash models: not image, speech, live, embedding or experimental ones.
-      .filter((n) => /^gemini-.*flash/.test(n) && !/image|tts|audio|live|embed|exp|robotics|computer|thinking/.test(n));
+      .map((m) => String(m.name || "").replace(/^models\//, ""));
+    // Only general Flash models: not image, speech, live, embedding or experimental ones.
+    const names = all.filter((n) => /^gemini-.*flash/.test(n) && !/image|tts|audio|live|embed|exp|robotics|computer|thinking/.test(n));
+    // Flash speech models (Pro ones aren't free).
+    const tts = all.filter((n) => /^gemini-.*flash.*tts/.test(n));
+    if (tts.length) geminiTtsAvailable = tts;
     if (names.length) geminiAvailable = names;
     return geminiAvailable;
   } catch { return null; }
@@ -1754,6 +1887,7 @@ $("clearKey").onclick = () => {
   addMsg("bot", "Key removed from this device.");
 };
 function renderGeminiStatus() {
+  renderVoiceEngine();
   const key = store.get("geminiKey");
   $("geminiStatus").textContent = key ? `A Gemini key is saved on this device (ends in ${key.slice(-4)}).` : "No Gemini key saved yet.";
 }
@@ -1791,10 +1925,24 @@ $("voicePick").onchange = (e) => {
   if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
   speak("Hi, I'm Jarvis. This is how I sound.");
 };
+$("voiceEngine").value = store.get("voiceEngine", "gemini") === "gemini" ? "gemini" : "apple";
+$("voiceEngine").onchange = (e) => { stopGeminiVoice(); store.set("voiceEngine", e.target.value); geminiVoiceRestUntil = 0; renderVoiceEngine(); };
+for (const [name, feel] of Object.entries(GEMINI_VOICES)) $("geminiVoice").add(new Option(`${name} (${feel})`, name));
+$("geminiVoice").value = GEMINI_VOICES[store.get("geminiVoice")] ? store.get("geminiVoice") : "Algieba";
+$("geminiVoice").onchange = (e) => store.set("geminiVoice", e.target.value);
+function renderVoiceEngine() {
+  const gem = $("voiceEngine").value === "gemini";
+  $("geminiVoiceRow").hidden = !gem;
+  $("voiceEngineNote").textContent = gem && !store.get("geminiKey")
+    ? "Gemini's voice needs a Gemini key (below, under YouTube videos). Until then Jarvis uses the iPad voice."
+    : gem ? "Free with your Gemini key. Jarvis's answers are sent to Google to be spoken. If Gemini is busy or its free limit runs out, the iPad voice below takes over." : "";
+}
+renderVoiceEngine();
 $("testVoice").onclick = () => {
-  if (!synth) { addMsg("bot", "This browser can't speak out loud."); return; }
+  unlockSpeech();
+  if (!synth && !useGeminiVoice()) { addMsg("bot", "This browser can't speak out loud."); return; }
   if (!voiceOn) { voiceOn = true; store.set("voice", "on"); renderVoiceToggle(); }
-  const msg = "Hello, this is Jarvis. If you can hear me, voice is working.";
+  const msg = "What's good, boss. This is Jarvis. If you can hear me, the voice is working.";
   addMsg("bot", msg); speak(msg);
 };
 function renderMemory() {
@@ -1892,6 +2040,6 @@ window.jarvisReady = true;
 $("voiceToggle").onclick = () => {
   voiceOn = !voiceOn;
   store.set("voice", voiceOn ? "on" : "off");
-  if (!voiceOn && synth) { synth.cancel(); setState(null); }
+  if (!voiceOn) { synth?.cancel(); stopGeminiVoice(); setState(null); }
   renderVoiceToggle();
 };
