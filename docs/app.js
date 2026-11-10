@@ -543,8 +543,11 @@ async function recordingStopped(s) {
   s.done = true;
   releaseMic(s);
   if (s.cancelled) return;
-  if (!s.spoke && !s.noMeter) { $("hint").textContent = `Mic check: no voice detected (loudest sound ${(s.peak || 0).toFixed(3)}). Speak closer to the iPad.`; finishSession(s); return; }
   const blob = new Blob(s.chunks, { type: (s.mr?.mimeType || "audio/mp4").split(";")[0] });
+  // A meter stuck at exactly zero next to a recording of real size means the meter is broken, not the microphone
+  // (iPad Safari does this sometimes), so let Gemini listen to the recording instead of throwing it away.
+  const meterDead = (s.peak || 0) < 0.0005 && blob.size > 30000;
+  if (!s.spoke && !s.noMeter && !meterDead) { $("hint").textContent = `Mic check: no voice detected (loudest sound ${(s.peak || 0).toFixed(3)}). Speak closer to the iPad.`; finishSession(s); return; }
   $("hint").textContent = `Mic check: recorded ${blob.size} bytes, loudest sound ${(s.peak || 0).toFixed(3)}, ${s.spoke ? "voice detected" : "no voice detected"}.`;
   if (blob.size < 1000) { finishSession(s); return; }
   transcribing = true;
