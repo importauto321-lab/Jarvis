@@ -109,14 +109,22 @@ const GEMINI_VOICES = {
 // Kept light: heavy acting directions make the voice sound forced.
 const GEMINI_VOICE_STYLE = "Say this in a natural, relaxed, confident way, like a cool friend talking:\n\n";
 let geminiVoiceRestUntil = 0; // after Gemini's free voice limit runs out, use the iPad voice for a while
-let warnedVoiceLimit = false;
 const ttsAudio = typeof Audio === "function" ? new Audio() : null;
 if (ttsAudio) { ttsAudio.playsInline = true; ttsAudio.preload = "auto"; }
 let ttsUnlocked = false;
 let ttsToken = 0;        // changes whenever speech is stopped, so a late answer from Google isn't played
 let ttsFinish = null;    // ends the Gemini speech that's playing
-const useGeminiVoice = () => !!ttsAudio && store.get("voiceEngine", "gemini") === "gemini" && !!store.get("geminiKey") &&
-  Date.now() > geminiVoiceRestUntil;
+const geminiVoiceChosen = () => !!ttsAudio && store.get("voiceEngine", "gemini") === "gemini" && !!store.get("geminiKey");
+const useGeminiVoice = () => geminiVoiceChosen() && Date.now() > geminiVoiceRestUntil;
+// When Gemini's voice can't speak: by default Jarvis doesn't switch to a different voice mid-conversation;
+// the answer stays on screen and listening carries on. Settings can allow the iPad voice instead.
+function backupSpeak(text, then) {
+  if (store.get("voiceBackup", "screen") === "ipad") { speakApple(text, then); return; }
+  $("hint").textContent = Date.now() < geminiVoiceRestUntil
+    ? "Gemini's free voice is resting for a few minutes, so my answers are on screen until it's back."
+    : "My voice didn't come through that time, so my answer is on screen.";
+  setTimeout(() => then?.(), 600);
+}
 
 // 16-bit PCM from Gemini, wrapped as a WAV file Safari can play.
 function pcmToWav(pcm, rate) {
@@ -184,6 +192,7 @@ async function geminiSpeech(text, token) {
 function speak(text, then) {
   if (!voiceOn || !text) { then?.(); return; }
   if (useGeminiVoice()) { speakGemini(text, then); return; }
+  if (geminiVoiceChosen()) { backupSpeak(text, then); return; }
   speakApple(text, then);
 }
 
@@ -196,11 +205,7 @@ async function speakGemini(text, then) {
   if (token !== ttsToken) return; // stopped while Google was working
   if (app.dataset.state === "thinking") setState(null);
   if (!(wav instanceof Blob)) {
-    if (wav === "limit" && !warnedVoiceLimit) {
-      warnedVoiceLimit = true;
-      $("hint").textContent = "Gemini's free voice limit is used up for a few minutes, so I'm using the iPad voice until it resets.";
-    }
-    speakApple(text, then);
+    backupSpeak(text, then);
     return;
   }
   if (!session) setAudioMode("playback");
@@ -220,14 +225,14 @@ async function speakGemini(text, then) {
   const guard = setTimeout(finish, (wav.size / 48) + 5000);
   ttsFinish = finish;
   ttsAudio.onended = () => finish();
-  ttsAudio.onerror = () => { if (!done) { finish(false); speakApple(text, then); } };
+  ttsAudio.onerror = () => { if (!done) { finish(false); backupSpeak(text, then); } };
   try {
     ttsAudio.src = url;
     await ttsAudio.play();
     if (!done) setState("speaking", "Speaking");
   } catch {
     // The iPad blocked it (no tap yet) or it can't play: use the iPad voice instead.
-    if (!done) { finish(false); speakApple(text, then); }
+    if (!done) { finish(false); backupSpeak(text, then); }
   }
 }
 
@@ -1935,12 +1940,15 @@ $("voiceEngine").onchange = (e) => { stopGeminiVoice(); store.set("voiceEngine",
 for (const [name, feel] of Object.entries(GEMINI_VOICES)) $("geminiVoice").add(new Option(`${name} (${feel})`, name));
 $("geminiVoice").value = GEMINI_VOICES[store.get("geminiVoice")] ? store.get("geminiVoice") : "Algieba";
 $("geminiVoice").onchange = (e) => store.set("geminiVoice", e.target.value);
+$("voiceBackup").checked = store.get("voiceBackup", "screen") === "ipad";
+$("voiceBackup").onchange = (e) => store.set("voiceBackup", e.target.checked ? "ipad" : "screen");
 function renderVoiceEngine() {
   const gem = $("voiceEngine").value === "gemini";
   $("geminiVoiceRow").hidden = !gem;
+  $("voiceBackupRow").hidden = !gem;
   $("voiceEngineNote").textContent = gem && !store.get("geminiKey")
     ? "Gemini's voice needs a Gemini key (below, under YouTube videos). Until then Jarvis uses the iPad voice."
-    : gem ? "Free with your Gemini key. Jarvis's answers are sent to Google to be spoken. If Gemini is busy or its free limit runs out, the iPad voice below takes over." : "";
+    : gem ? "Free with your Gemini key. Jarvis's answers are sent to Google to be spoken. If Gemini's free limit runs out for a few minutes, his answers show on screen until it's back." : "";
 }
 renderVoiceEngine();
 $("testVoice").onclick = () => {
