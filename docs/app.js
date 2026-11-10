@@ -130,6 +130,20 @@ function backupSpeak(text, then) {
   setTimeout(() => then?.(), 600);
 }
 
+// Gemini's voice is fairly quiet. Scale it so the loudest moment is just under full volume (at most 4 times
+// louder), which is louder without distorting, whatever the iPad's volume is set to.
+function louder(pcm) {
+  const total = pcm.length >> 1;
+  const view = new DataView(pcm.buffer, pcm.byteOffset, total * 2);
+  let peak = 0;
+  for (let i = 0; i < total; i++) peak = Math.max(peak, Math.abs(view.getInt16(i * 2, true)));
+  if (!peak) return pcm;
+  const gain = Math.min(4, (0.95 * 32767) / peak);
+  if (gain <= 1.05) return pcm;
+  for (let i = 0; i < total; i++) view.setInt16(i * 2, Math.round(view.getInt16(i * 2, true) * gain), true);
+  return pcm;
+}
+
 // Fade the last 80 ms to silence so the end of his voice doesn't click or hiss (16-bit little-endian samples).
 function fadeOutEnd(pcm, rate) {
   const total = pcm.length >> 1;
@@ -197,7 +211,7 @@ async function geminiSpeech(text, token) {
       const pcm = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
       const rate = Number((String(part.inlineData.mimeType).match(/rate=(\d+)/) || [])[1]) || 24000;
-      return pcmToWav(fadeOutEnd(pcm, rate), rate);
+      return pcmToWav(fadeOutEnd(louder(pcm), rate), rate);
     } catch { /* too slow or no connection: try the next model */ } finally { clearTimeout(timer); }
   }
   // Every free speech model is used up: rest a few minutes instead of asking again on every answer.
