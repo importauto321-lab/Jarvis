@@ -41,3 +41,14 @@
 
 - **What goes in it?** For example new emails, today's calendar, loads arriving or leaving, unpaid invoices.
 - **How should he reach you?** Text, email, or phone call.
+
+## Decisions (Nov 10)
+
+- **Anthropic Managed Agents, not Hermes.** Nothing to install or keep running, works with the iPad and iMac off.
+- Use Jarvis from both the iPad and the home iMac (same web page). Jarvis's memory is saved per device today;
+  moving it to Managed Agents makes it shared.
+- Load boards (Super Dispatch, Central Dispatch): try Claude in Chrome on the iMac, with you watching. Check each board's terms first.
+- Calls and texts need a phone service (Twilio for texts, Retell AI for voice calls). Check today's prices first.
+- Managed Agents is billed through an Anthropic API account, separate from the Claude app plan. Set a monthly spending limit.
+- Rough costs: morning briefing $3–8/month; a daily load board agent $30–150/month (least certain).
+- Build order: iPad test (page 23) → morning briefing → load boards → calls and texts → app for other people.
