@@ -106,8 +106,8 @@ const GEMINI_VOICES = {
   Algieba: "Smooth", Umbriel: "Easy-going", Charon: "Deep and steady", Algenib: "Gravelly",
   Zubenelgenubi: "Casual", Orus: "Firm", Fenrir: "Lively", Iapetus: "Clear",
 };
-const GEMINI_VOICE_STYLE = "Read this aloud in a deep, low, slightly raspy voice, slow and laid-back, with cool New York " +
-  "street confidence and swagger, unbothered and smooth, like a confident friend talking. Read only the words after the colon:\n\n";
+// Kept light: heavy acting directions make the voice sound forced.
+const GEMINI_VOICE_STYLE = "Say this in a natural, relaxed, confident way, like a cool friend talking:\n\n";
 let geminiVoiceRestUntil = 0; // after Gemini's free voice limit runs out, use the iPad voice for a while
 let warnedVoiceLimit = false;
 const ttsAudio = typeof Audio === "function" ? new Audio() : null;
@@ -148,8 +148,10 @@ function stopGeminiVoice() {
 async function geminiSpeech(text, token) {
   const key = store.get("geminiKey");
   await geminiModelNames(key); // also finds Gemini's speech models
-  const models = geminiTtsAvailable?.length ? geminiPick(geminiTtsAvailable, [], false) : ["gemini-2.5-flash-preview-tts"];
+  const models = geminiTtsAvailable?.length ? geminiPick(geminiTtsAvailable, [], false).concat(
+    geminiPick(geminiTtsAvailable, [], true)).filter((m, i, a) => a.indexOf(m) === i).slice(0, 4) : ["gemini-2.5-flash-preview-tts"];
   const voiceName = GEMINI_VOICES[store.get("geminiVoice")] ? store.get("geminiVoice") : "Algieba";
+  let limited = false;
   for (const model of models) {
     if (token !== ttsToken) return null;
     const controller = new AbortController();
@@ -161,7 +163,8 @@ async function geminiSpeech(text, token) {
         body: JSON.stringify({ contents: [{ parts: [{ text: GEMINI_VOICE_STYLE + text }] }],
           generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } } } }),
       });
-      if (res.status === 429) { geminiVoiceRestUntil = Date.now() + 10 * 60 * 1000; return "limit"; }
+      // Each speech model has its own free limit, so a used-up one moves on to the next before giving up.
+      if (res.status === 429) { limited = true; continue; }
       if (!res.ok) continue;
       const data = await res.json();
       const part = (data.candidates?.[0]?.content?.parts || []).find((x) => x.inlineData?.data);
@@ -173,6 +176,8 @@ async function geminiSpeech(text, token) {
       return pcmToWav(pcm, rate);
     } catch { /* too slow or no connection: try the next model */ } finally { clearTimeout(timer); }
   }
+  // Every free speech model is used up: rest a few minutes instead of asking again on every answer.
+  if (limited) { geminiVoiceRestUntil = Date.now() + 3 * 60 * 1000; return "limit"; }
   return null;
 }
 
@@ -193,7 +198,7 @@ async function speakGemini(text, then) {
   if (!(wav instanceof Blob)) {
     if (wav === "limit" && !warnedVoiceLimit) {
       warnedVoiceLimit = true;
-      $("hint").textContent = "Gemini's free voice limit is used up for now, so I'm using the iPad voice for a few minutes.";
+      $("hint").textContent = "Gemini's free voice limit is used up for a few minutes, so I'm using the iPad voice until it resets.";
     }
     speakApple(text, then);
     return;
