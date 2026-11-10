@@ -68,22 +68,48 @@ loadVoices();
 if (synth) synth.addEventListener?.("voiceschanged", loadVoices);
 const chosenVoice = () => voices.find((v) => v.voiceURI === voiceURI) || null;
 
+// iOS Safari only lets a page speak after a tap. Speak a silent utterance inside the tap so later replies
+// (which arrive after a network wait) are allowed to talk.
+let speechUnlocked = false;
+function unlockSpeech() {
+  if (speechUnlocked || !synth) return;
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    synth.speak(u);
+    speechUnlocked = true;
+  } catch {}
+}
+
+let currentUtterance = null; // keep a reference: Chrome can garbage-collect it mid-speech and never fire onend
+let speakTimer = null;
 function speak(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
+  clearTimeout(speakTimer);
+  let finished = false;
+  const finish = (callThen) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(speakTimer);
+    if (app.dataset.state === "speaking") setState(null);
+    if (callThen) then?.();
+  };
   try {
-    if (synth.speaking || synth.pending) synth.cancel();
-    try { synth.resume(); } catch {}
+    const wasBusy = synth.speaking || synth.pending;
+    if (wasBusy) synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
+    currentUtterance = u;
     const voice = chosenVoice();
     if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "en-US"; }
     u.onstart = () => setState("speaking", "Speaking");
-    u.onend = () => { if (app.dataset.state === "speaking") setState(null); then?.(); };
-    u.onerror = (e) => {
-      if (app.dataset.state === "speaking") setState(null);
-      if (e.error !== "interrupted" && e.error !== "canceled") then?.();
-    };
-    synth.speak(u);
-  } catch { setState(null, "Voice error"); }
+    u.onend = () => finish(true);
+    u.onerror = (e) => finish(e.error !== "interrupted" && e.error !== "canceled");
+    // Safety net: if the browser never reports the end of speech, carry on anyway so Jarvis keeps listening.
+    speakTimer = setTimeout(() => { try { synth.cancel(); } catch {} finish(true); }, 4000 + text.length * 100);
+    // Chrome drops a speak() that comes right after cancel(), so wait a beat in that case.
+    const go = () => { try { synth.resume(); } catch {} synth.speak(u); };
+    if (wasBusy) setTimeout(go, 150); else go();
+  } catch { setState(null, "Voice error"); then?.(); }
 }
 
 // ---------- listening ----------
@@ -91,7 +117,7 @@ const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition |
 let rec = null;
 let conversing = false;   // true from the first tap until the user pauses or goes quiet
 let quietRounds = 0;
-const MAX_QUIET_ROUNDS = 2;
+const MAX_QUIET_ROUNDS = 4;
 if (!Recognition) $("hint").textContent = "This browser can't listen. Open this page in Safari or Chrome, or type below.";
 
 function pauseConversation(note) {
@@ -105,6 +131,8 @@ function stopListening() {
   if (rec) { try { rec.abort(); } catch {} rec = null; }
   if (app.dataset.state === "listening") setState(null);
 }
+
+function listenSoon() { setTimeout(() => { if (conversing && !busy) listen(); }, 400); }
 
 function listen() {
   if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
@@ -124,6 +152,8 @@ function listen() {
   };
   let blocked = false;
   r.onerror = (e) => {
+    if (e.error === "network") $("hint").textContent = "I can't reach the speech service. Check your internet connection.";
+    if (e.error === "audio-capture") $("hint").textContent = "I can't find a microphone.";
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       blocked = true;
       if (quietRounds === 0 && !input.value) {
@@ -141,7 +171,7 @@ function listen() {
     if (text) { quietRounds = 0; handle(text); return; }
     if (blocked || !conversing) return;
     // Heard nothing: listen again a couple of times, then pause so the mic isn't left on.
-    if (++quietRounds <= MAX_QUIET_ROUNDS) listen();
+    if (++quietRounds <= MAX_QUIET_ROUNDS) listenSoon();
     else pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again.");
   };
   try {
@@ -154,6 +184,7 @@ function listen() {
 }
 
 $("orb").onclick = () => {
+  unlockSpeech();
   if (app.dataset.state === "listening") {
     // Mid-sentence: send what was heard. Nothing heard yet: pause.
     if (input.value.trim() && rec) rec.stop();
@@ -891,7 +922,7 @@ async function askClaude(question) {
 let busy = false;
 
 function afterReply() {
-  if (conversing && handsFree && Recognition) listen();
+  if (conversing && handsFree && Recognition) listenSoon();
 }
 
 async function handle(raw, { tapped = false } = {}) {
@@ -1060,6 +1091,7 @@ function clearConfirmButtons() {
 }
 
 $("composer").addEventListener("submit", (e) => {
+  unlockSpeech();
   e.preventDefault();
   const text = input.value;
   input.value = "";
