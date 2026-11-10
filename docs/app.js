@@ -381,7 +381,7 @@ async function recordingStopped(s) {
     const audio = await toWav(blob).catch(() => blob);
     const words = await geminiGenerate(
       [{ inline_data: { mime_type: audio.type || "audio/mp4", data: await toBase64(audio) } }, { text: TRANSCRIBE_PROMPT }],
-      { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, moveOnTimeout: true,
+      { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, moveOnTimeout: true, retryWaits: [1000],
         generationConfig: { thinkingConfig: { thinkingBudget: 0 } } });
     s.heard = /^\W*silence\W*$/i.test(words) ? "" : words.replace(/^["']|["']$/g, "").trim();
   } catch (err) {
@@ -912,14 +912,17 @@ async function geminiOnce(model, key, parts, timeoutMs, generationConfig) {
 // moveOnTimeout: a slow answer counts as busy and the next model is tried (for short jobs like hearing you);
 // otherwise a timeout ends the request (a long video can't be retried quickly).
 async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Thinking", models = GEMINI_MODELS,
-  generationConfig = null, moveOnTimeout = false } = {}) {
+  generationConfig = null, moveOnTimeout = false, retryWaits = GEMINI_RETRY_WAITS } = {}) {
   const key = store.get("geminiKey");
   if (!key) throw new GeminiError("key", "No Gemini key is saved.");
   let last = null;
   const tried = []; // what each model said, for error messages
   const fail = (kind, message) => {
     const e = new GeminiError(kind, message);
-    e.detail = tried.join(", ") + (last?.why ? `. ${String(last.why).slice(0, 120)}` : "");
+    // "model 503, model 503" becomes "model 503 x2", so the message stays short.
+    const counts = new Map();
+    for (const t of tried) counts.set(t, (counts.get(t) || 0) + 1);
+    e.detail = [...counts].map(([t, n]) => (n > 1 ? `${t} x${n}` : t)).join(", ") + (last?.why ? `. ${String(last.why).slice(0, 120)}` : "");
     return e;
   };
   for (const model of models) {
@@ -944,9 +947,9 @@ async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Think
       if (/api key/i.test(out.why) || out.status === 401) throw new GeminiError("key", "The Gemini API key didn't work.");
       const busy = out.status === 429 || out.status >= 500;
       if (!busy) break; // this model can't do it (missing, or the request is the problem): try the next one
-      const wait = out.status === 429 ? out.wait : GEMINI_RETRY_WAITS[attempt];
+      const wait = out.status === 429 ? out.wait : retryWaits[attempt];
       // A daily limit asks for a long wait (or none); the next model has its own limit, so move on.
-      if (wait == null || wait > GEMINI_MAX_WAIT || attempt >= GEMINI_RETRY_WAITS.length) break;
+      if (wait == null || wait > GEMINI_MAX_WAIT || attempt >= retryWaits.length) break;
       setState("thinking", "Gemini is busy, trying again");
       await sleep(wait);
       setState("thinking", workingLabel);
