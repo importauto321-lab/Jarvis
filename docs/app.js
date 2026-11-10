@@ -106,8 +106,8 @@ const GEMINI_VOICES = {
   Algieba: "Smooth", Umbriel: "Easy-going", Charon: "Deep and steady", Algenib: "Gravelly",
   Zubenelgenubi: "Casual", Orus: "Firm", Fenrir: "Lively", Iapetus: "Clear",
 };
-const GEMINI_VOICE_STYLE = "Read this aloud in a deep, smooth, relaxed, laid-back voice, with easy confidence and swagger, " +
-  "like a cool friend talking. Read only the words after the colon:\n\n";
+const GEMINI_VOICE_STYLE = "Read this aloud in a deep, low, slightly raspy voice, slow and laid-back, with cool New York " +
+  "street confidence and swagger, unbothered and smooth, like a confident friend talking. Read only the words after the colon:\n\n";
 let geminiVoiceRestUntil = 0; // after Gemini's free voice limit runs out, use the iPad voice for a while
 let warnedVoiceLimit = false;
 const ttsAudio = typeof Audio === "function" ? new Audio() : null;
