@@ -35,7 +35,7 @@ Read this first in every new session. It sums up earlier sessions so the user do
   - **Voice:** with a Gemini key and Settings → Voice engine = Gemini (default), `speak()` sends the answer to a Gemini
     Flash TTS model (found by `geminiModelNames`, voice from `GEMINI_VOICES`, default Algieba), wraps the PCM as WAV and
     plays it on one reused `<audio>` element unlocked by silence on every tap (`unlockGeminiAudio`); any failure or a 429
-    (rests 10 min) falls back to `speakApple()`. CSP `media-src blob:`.
+    (after every TTS model 429s, rests 3 min) falls back to `speakApple()`. CSP `media-src blob:`.
 - **Computer Jarvis** (`jarvis/`, Python, `python -m jarvis`). Same idea, simpler: skills, Claude with a tool loop,
   YouTube via `GEMINI_API_KEY`. Tests: `python -m pytest`.
 
