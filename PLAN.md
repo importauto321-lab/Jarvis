@@ -52,3 +52,14 @@
 - Managed Agents is billed through an Anthropic API account, separate from the Claude app plan. Set a monthly spending limit.
 - Rough costs: morning briefing $3–8/month; a daily load board agent $30–150/month (least certain).
 - Build order: iPad test (page 23) → morning briefing → load boards → calls and texts → app for other people.
+
+## The team of agents
+
+- **Claude is Jarvis's brain and the boss.** You talk only to Jarvis; he hands jobs to workers and gives you one answer.
+- Workers: Gemini (YouTube, hearing; free plan), Claude helpers on Managed Agents (briefing, invoices),
+  load board worker on the iMac (Claude in Chrome), ChatGPT only where it's clearly better (pictures, second opinion),
+  Twilio/Retell for texts and calls.
+- App plans (ChatGPT, Gemini) don't connect to Jarvis; each worker needs its own API key, billed separately.
+- Start with Jarvis plus 2–3 workers; add more only when they're clearly better or cheaper.
+- Calls: text first, call only if there's no reply; short scripts; cheap model for simple calls. Jarvis says he's an AI
+  and only calls people who gave you their number. Rough cost: 100 texts + 30 short calls ≈ $5–10/month.
