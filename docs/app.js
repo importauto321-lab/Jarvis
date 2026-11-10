@@ -154,7 +154,8 @@ function stopListening() {
   session = null;
   micClosedAt = Date.now();
   clearTimers(s);
-  try { s.rec.abort(); } catch {}
+  if (s.kind === "record") { s.cancelled = true; try { s.mr?.stop(); } catch {} releaseMic(s); }
+  else { try { s.rec.abort(); } catch {} }
   input.value = "";
   if (app.dataset.state === "listening") setState(null);
 }
@@ -184,6 +185,7 @@ function finishSession(s, { aborted = false } = {}) {
 }
 
 function listen() {
+  if (hearWithGemini()) { listenRecorded(); return; }
   if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
   if (synth && (synth.speaking || synth.pending)) synth.cancel();
   stopListening();
@@ -226,13 +228,174 @@ function listen() {
   }
 }
 
+// ---------- hearing with Gemini ----------
+// When a Gemini key is saved, the circle records your voice itself and Gemini writes down what you said.
+// This avoids Safari's speech recognition, which on iPad often stops hearing after the first question.
+const AudioCtx = window.AudioContext || window.webkitAudioContext || null;
+const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder && AudioCtx);
+const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get("geminiHearing") !== "off";
+let audioCtx = null;      // made on the first tap, so the iPad lets it run
+let transcribing = false;
+const SILENCE_AFTER_SPEECH_MS = 1300; // quiet this long after you've spoken: you've finished
+const MAX_RECORD_MS = 30000;
+const NO_METER_RECORD_MS = 7000;      // if loudness can't be measured, record this long and let Gemini decide
+const TRANSCRIBE_PROMPT = "Transcribe exactly what the person says in this recording, in the language they speak. " +
+  "Reply with only their words: no quotes, labels, timestamps or comments. If nobody speaks, reply with exactly: [silence]";
+
+function wakeAudio() {
+  if (!canRecord) return;
+  try { audioCtx ||= new AudioCtx(); audioCtx.resume?.(); } catch {}
+}
+
+async function listenRecorded() {
+  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  stopListening();
+  const s = { kind: "record", heard: "", finalText: "", error: "", started: false, spoke: false, timers: {}, chunks: [] };
+  session = s;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) {
+    if (session !== s) return;
+    session = null;
+    setState(null);
+    addMsg("bot", err.name === "NotAllowedError" ? MIC_ERRORS["not-allowed"] : MIC_ERRORS["audio-capture"]);
+    pauseConversation("Tap the circle when the microphone is ready.");
+    return;
+  }
+  if (session !== s) { stream.getTracks().forEach((t) => t.stop()); return; }
+  s.stream = stream;
+  const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported?.(t));
+  const mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+  s.mr = mr;
+  mr.ondataavailable = (e) => { if (e.data?.size) s.chunks.push(e.data); };
+  mr.onstop = () => recordingStopped(s);
+  mr.start(250);
+  s.started = true;
+  setState("listening", "Listening");
+
+  // Measure loudness to tell when you start and stop talking.
+  const t0 = Date.now();
+  try {
+    wakeAudio();
+    if (audioCtx?.state !== "running") throw new Error("audio not running");
+    const source = audioCtx.createMediaStreamSource(stream);
+    const meter = audioCtx.createAnalyser();
+    meter.fftSize = 1024;
+    source.connect(meter);
+    s.source = source;
+    const buf = new Float32Array(meter.fftSize);
+    let floor = 0, samples = 0, lastLoud = 0;
+    s.timers.meter = setInterval(() => {
+      meter.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (const v of buf) sum += v * v;
+      const level = Math.sqrt(sum / buf.length);
+      const now = Date.now();
+      if (now - t0 < 300) { floor = (floor * samples + level) / ++samples; return; }
+      if (level > Math.max(0.012, Math.min(floor, 0.03) * 2.5)) { s.spoke = true; lastLoud = now; }
+      if (s.spoke && now - lastLoud > SILENCE_AFTER_SPEECH_MS) finishRecording(s);
+    }, 100);
+    s.timers.nothing = setTimeout(() => { if (!s.spoke) finishRecording(s); }, NOTHING_HEARD_MS);
+    s.timers.max = setTimeout(() => finishRecording(s), MAX_RECORD_MS);
+  } catch {
+    s.noMeter = true;
+    s.timers.max = setTimeout(() => finishRecording(s), NO_METER_RECORD_MS);
+  }
+}
+
+// Stops recording and hands the audio to Gemini (the recorder's onstop does that).
+function finishRecording(s) {
+  if (session !== s) return;
+  session = null;
+  micClosedAt = Date.now();
+  clearTimers(s);
+  if (app.dataset.state === "listening") setState(null);
+  if (s.mr?.state === "recording") { try { s.mr.stop(); return; } catch {} }
+  recordingStopped(s);
+}
+
+function releaseMic(s) {
+  clearTimers(s);
+  try { s.source?.disconnect(); } catch {}
+  s.stream?.getTracks().forEach((t) => t.stop());
+}
+
+async function recordingStopped(s) {
+  if (s.done) return;
+  s.done = true;
+  releaseMic(s);
+  if (s.cancelled) return;
+  if (!s.spoke && !s.noMeter) { finishSession(s); return; }
+  const blob = new Blob(s.chunks, { type: (s.mr?.mimeType || "audio/mp4").split(";")[0] });
+  if (blob.size < 1000) { finishSession(s); return; }
+  transcribing = true;
+  setState("thinking", "Hearing you");
+  try {
+    const audio = await toWav(blob).catch(() => blob);
+    const words = await geminiGenerate(
+      [{ inline_data: { mime_type: audio.type || "audio/mp4", data: await toBase64(audio) } }, { text: TRANSCRIBE_PROMPT }],
+      { timeoutMs: 30000, workingLabel: "Hearing you" });
+    s.heard = /^\W*silence\W*$/i.test(words) ? "" : words.replace(/^["']|["']$/g, "").trim();
+  } catch (err) {
+    transcribing = false;
+    setState(null);
+    if (!(err instanceof GeminiError) || err.kind !== "empty") {
+      addMsg("bot", {
+        key: "My Gemini key didn't work, so I couldn't hear you. Check the key under YouTube videos in Settings, or type below.",
+        limit: "Gemini's free limit is used up for now, so I couldn't hear you. Type below, or try again later.",
+        busy: "Gemini is too busy to hear you right now. Tap the circle to try again, or type below.",
+        network: "I need the internet to hear you. Check Wi-Fi, then tap the circle again.",
+        timeout: "Hearing you took too long. Tap the circle to try again.",
+      }[err.kind] || "I couldn't turn your voice into words. Tap the circle to try again, or type below.");
+      pauseConversation("Tap the circle to try again.");
+      return;
+    }
+  }
+  transcribing = false;
+  if (app.dataset.state === "thinking") setState(null);
+  finishSession(s);
+}
+
+function toBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Gemini reliably understands WAV, so the recording becomes 16 kHz mono WAV (small, and plenty for speech).
+async function toWav(blob) {
+  const decoded = await audioCtx.decodeAudioData(await blob.arrayBuffer());
+  const rate = 16000;
+  const offline = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start();
+  const pcm = (await offline.startRendering()).getChannelData(0);
+  const out = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const text = (at, str) => { for (let i = 0; i < str.length; i++) out.setUint8(at + i, str.charCodeAt(i)); };
+  text(0, "RIFF"); out.setUint32(4, 36 + pcm.length * 2, true); text(8, "WAVE"); text(12, "fmt ");
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+  out.setUint32(24, rate, true); out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+  text(36, "data"); out.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) out.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+  return new Blob([out], { type: "audio/wav" });
+}
+
 $("orb").onclick = () => {
+  if (transcribing) return;
   if (app.dataset.state === "listening" && session) {
     // Mid-sentence: send what was heard. Nothing heard yet: pause.
-    if (session.heard.trim()) endSession(session);
+    if (session.kind === "record") { if (session.spoke || session.noMeter) finishRecording(session); else pauseConversation(); }
+    else if (session.heard.trim()) endSession(session);
     else pauseConversation();
     return;
   }
+  wakeAudio();
   if (synth && synth.speaking) { synth.cancel(); setState(null); }
   // Listening has to start right here, inside the tap, or the iPad won't open the microphone.
   conversing = handsFree;
@@ -647,20 +810,25 @@ function youtubeUrl(text) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// kind: "key" (bad key), "limit" (free limit used up), "busy", "network", "timeout", "empty" or "failed".
+class GeminiError extends Error {
+  constructor(kind, message) { super(message); this.kind = kind; }
+}
+
 // One request to one model. Returns { text } on success, or { status, why, wait } on failure.
-async function geminiOnce(model, key, video, question) {
+async function geminiOnce(model, key, parts, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 150000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
     res = await fetch(geminiUrl(model), {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ contents: [{ parts: [{ file_data: { file_uri: video } }, { text: question }] }] }),
+      body: JSON.stringify({ contents: [{ parts }] }),
       signal: controller.signal,
     });
   } catch (err) {
-    throw new Error(err.name === "AbortError" ? "Watching the video took too long. It may be very long; suggest a shorter one." : "Couldn't reach Gemini. The internet may be down.");
+    throw err.name === "AbortError" ? new GeminiError("timeout", "Gemini took too long.") : new GeminiError("network", "Couldn't reach Gemini.");
   } finally { clearTimeout(timer); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -668,35 +836,54 @@ async function geminiOnce(model, key, video, question) {
     const delay = (data.error?.details || []).find((d) => d.retryDelay)?.retryDelay;
     return { status: res.status, why: String(data.error?.message || ""), wait: delay ? parseFloat(delay) * 1000 : null };
   }
-  const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(" ").trim();
-  if (!text) throw new Error("Gemini didn't say anything about that video. It may be blocked for safety reasons.");
-  return { text };
+  return { text: (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(" ").trim() };
 }
 
 // Busy (overloaded or briefly rate limited) is retried, then the next free model is tried.
-async function askGemini(video, question) {
+async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Thinking" } = {}) {
   const key = store.get("geminiKey");
-  if (!key) throw new Error("No Gemini key is saved. Tell the user to open Settings and paste a Gemini API key under YouTube videos.");
+  if (!key) throw new GeminiError("key", "No Gemini key is saved.");
   let last = null;
   for (const model of GEMINI_MODELS) {
     for (let attempt = 0; ; attempt++) {
-      const out = await geminiOnce(model, key, video, question);
-      if (out.text) return out.text;
+      const out = await geminiOnce(model, key, parts, timeoutMs);
+      if (out.text !== undefined) {
+        if (!out.text) throw new GeminiError("empty", "Gemini didn't say anything.");
+        return out.text;
+      }
       last = out;
-      if (/api key/i.test(out.why) || out.status === 401) throw new Error("The Gemini API key didn't work. Tell the user to check it in Settings.");
+      if (/api key/i.test(out.why) || out.status === 401) throw new GeminiError("key", "The Gemini API key didn't work.");
       const busy = out.status === 429 || out.status >= 500;
-      if (!busy) break; // this model can't do it (missing, or the video is the problem): try the next one
+      if (!busy) break; // this model can't do it (missing, or the request is the problem): try the next one
       const wait = out.status === 429 ? out.wait : GEMINI_RETRY_WAITS[attempt];
       // A daily limit asks for a long wait (or none); the next model has its own limit, so move on.
       if (wait == null || wait > GEMINI_MAX_WAIT || attempt >= GEMINI_RETRY_WAITS.length) break;
       setState("thinking", "Gemini is busy, trying again");
       await sleep(wait);
-      setState("thinking", "Watching the video");
+      setState("thinking", workingLabel);
     }
   }
-  if (last.status === 429) throw new Error("Gemini's free limit is used up for now on every free model. Tell the user to try again later, or tomorrow.");
-  if (last.status >= 500) throw new Error("Gemini is too busy right now, even after retrying. Tell the user to try again in a few minutes.");
-  throw new Error(`Gemini couldn't watch that video (status ${last.status}). It may be private, age-restricted or too long. ${last.why}`.trim());
+  if (last.status === 429) throw new GeminiError("limit", "Gemini's free limit is used up for now on every free model.");
+  if (last.status >= 500) throw new GeminiError("busy", "Gemini is too busy right now, even after retrying.");
+  throw new GeminiError("failed", `Gemini returned status ${last.status}. ${last.why}`.trim());
+}
+
+// Errors here are read by Claude, which explains them to the user.
+async function askGemini(video, question) {
+  try {
+    return await geminiGenerate([{ file_data: { file_uri: video } }, { text: question }], { workingLabel: "Watching the video" });
+  } catch (err) {
+    if (!(err instanceof GeminiError)) throw err;
+    throw new Error({
+      key: store.get("geminiKey") ? "The Gemini API key didn't work. Tell the user to check it in Settings."
+        : "No Gemini key is saved. Tell the user to open Settings and paste a Gemini API key under YouTube videos.",
+      limit: "Gemini's free limit is used up for now on every free model. Tell the user to try again later, or tomorrow.",
+      busy: "Gemini is too busy right now, even after retrying. Tell the user to try again in a few minutes.",
+      network: "Couldn't reach Gemini. The internet may be down.",
+      timeout: "Watching the video took too long. It may be very long; suggest a shorter one.",
+      empty: "Gemini didn't say anything about that video. It may be blocked for safety reasons.",
+    }[err.kind] || `Gemini couldn't watch that video. It may be private, age-restricted or too long. ${err.message}`);
+  }
 }
 
 const GOOGLE_TOOLS = [
@@ -1013,7 +1200,7 @@ let busy = false;
 
 function afterReply() {
   // A short pause lets the iPad switch its audio from the speaker back to the microphone.
-  if (conversing && handsFree && Recognition) setTimeout(() => { if (conversing && !busy) listen(); }, 400);
+  if (conversing && handsFree && (Recognition || hearWithGemini())) setTimeout(() => { if (conversing && !busy) listen(); }, 400);
 }
 
 async function handle(raw, { tapped = false } = {}) {
@@ -1234,6 +1421,8 @@ function saveGeminiKey() {
 }
 $("saveGemini").onclick = saveGeminiKey;
 $("geminiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveGeminiKey(); } });
+$("geminiHearing").checked = store.get("geminiHearing") !== "off";
+$("geminiHearing").onchange = (e) => { stopListening(); store.set("geminiHearing", e.target.checked ? "on" : "off"); };
 $("clearGemini").onclick = () => { store.set("geminiKey", null); renderGeminiStatus(); addMsg("bot", "Gemini key removed from this device."); };
 $("handsFree").onchange = (e) => {
   handsFree = e.target.checked;
