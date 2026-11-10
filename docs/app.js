@@ -130,6 +130,18 @@ function backupSpeak(text, then) {
   setTimeout(() => then?.(), 600);
 }
 
+// Fade the last 80 ms to silence so the end of his voice doesn't click or hiss (16-bit little-endian samples).
+function fadeOutEnd(pcm, rate) {
+  const total = pcm.length >> 1;
+  const n = Math.min(total, Math.floor(rate * 0.08));
+  const view = new DataView(pcm.buffer, pcm.byteOffset, total * 2);
+  for (let i = 0; i < n; i++) {
+    const at = (total - n + i) * 2;
+    view.setInt16(at, Math.round(view.getInt16(at, true) * (1 - (i + 1) / n)), true);
+  }
+  return pcm;
+}
+
 // 16-bit PCM from Gemini, wrapped as a WAV file Safari can play.
 function pcmToWav(pcm, rate) {
   const head = new DataView(new ArrayBuffer(44));
@@ -185,7 +197,7 @@ async function geminiSpeech(text, token) {
       const pcm = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
       const rate = Number((String(part.inlineData.mimeType).match(/rate=(\d+)/) || [])[1]) || 24000;
-      return pcmToWav(pcm, rate);
+      return pcmToWav(fadeOutEnd(pcm, rate), rate);
     } catch { /* too slow or no connection: try the next model */ } finally { clearTimeout(timer); }
   }
   // Every free speech model is used up: rest a few minutes instead of asking again on every answer.
