@@ -74,36 +74,50 @@ loadVoices();
 if (synth) synth.addEventListener?.("voiceschanged", loadVoices);
 const chosenVoice = () => voices.find((v) => v.voiceURI === voiceURI) || null;
 
+let micClosedAt = 0; // when the microphone last closed; the iPad needs a moment before it can speak
+
 function speak(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
+  const wait = micClosedAt + 350 - Date.now();
+  if (wait > 0) { setTimeout(() => speak(text, then), wait); return; }
+  // Safari sometimes never says speech has finished (or started), which would stop hands-free listening for good.
+  // So "done" also happens after about as long as the answer takes to say, plus a margin.
+  let done = false;
+  const finish = (callThen = true) => {
+    if (done) return;
+    done = true;
+    clearTimeout(guard);
+    if (app.dataset.state === "speaking") setState(null);
+    if (callThen) then?.();
+  };
+  const guard = setTimeout(finish, 5000 + text.length * 90);
   try {
     if (synth.speaking || synth.pending) synth.cancel();
     try { synth.resume(); } catch {}
     const u = new SpeechSynthesisUtterance(text);
     const voice = chosenVoice();
     if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "en-US"; }
-    u.onstart = () => setState("speaking", "Speaking");
-    u.onend = () => { if (app.dataset.state === "speaking") setState(null); then?.(); };
-    u.onerror = (e) => {
-      if (app.dataset.state === "speaking") setState(null);
-      if (e.error !== "interrupted" && e.error !== "canceled") then?.();
-    };
+    u.onstart = () => { if (!done) setState("speaking", "Speaking"); };
+    u.onend = () => finish();
+    u.onerror = (e) => finish(e.error !== "interrupted" && e.error !== "canceled");
     synth.speak(u);
-  } catch { setState(null, "Voice error"); }
+  } catch { finish(); setState(null, "Voice error"); }
 }
 
 // ---------- listening ----------
-// iPad Safari is fussy about the microphone: it often stops hearing if a new listener is started while the old one
-// is still shutting down, if listening starts outside a tap, or right as speech ends. So Jarvis keeps one listener,
-// starts it straight from your tap, waits for the old session to end before the next, and pauses after speaking.
+// iPad Safari is fussy about the microphone. A listener that is reused often turns on (the circle goes red) but
+// never delivers words, and sometimes it never says it has stopped. So every tap gets a brand-new listener, events
+// from older listeners are ignored, listening always starts straight from your tap, and timers make sure a stuck
+// listener is shut down instead of leaving the circle red.
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-let recognizer = null;    // the one listener, made on the first tap
-let session = null;       // the current listening session: { finalText, error, started }
-let restartWanted = false;
+let session = null;       // the current listening session: { rec, finalText, heard, error, started, timers }
 let conversing = false;   // true from the first tap until the user pauses or goes quiet
 let quietRounds = 0;
 let silentFailures = 0;   // sessions that ended without starting or hearing anything
 const MAX_QUIET_ROUNDS = 2;
+const START_TIMEOUT_MS = 4000;   // no "started" by then: the microphone didn't open
+const NOTHING_HEARD_MS = 9000;   // listening this long without a single word: stop
+const PAUSE_AFTER_WORDS_MS = 1600; // words stopped coming for this long: you've finished speaking
 if (!Recognition) $("hint").textContent = "This browser can't listen. Open this page in Safari or Chrome, or type below.";
 
 const MIC_ERRORS = {
@@ -121,44 +135,32 @@ function pauseConversation(note) {
   $("hint").textContent = note || "Paused. Tap the circle to talk again.";
 }
 
+function clearTimers(s) { for (const t of Object.values(s.timers)) clearTimeout(t); }
+
+// Ends the current session now, whether or not Safari ever reports that it ended.
+function endSession(s, { abort = false } = {}) {
+  if (session !== s) return;
+  session = null;
+  micClosedAt = Date.now();
+  clearTimers(s);
+  try { abort ? s.rec.abort() : s.rec.stop(); } catch {}
+  if (app.dataset.state === "listening") setState(null);
+  finishSession(s, { aborted: abort });
+}
+
 function stopListening() {
-  restartWanted = false;
-  if (recognizer && session) { try { recognizer.abort(); } catch {} }
+  const s = session;
+  if (!s) { if (app.dataset.state === "listening") setState(null); return; }
+  session = null;
+  micClosedAt = Date.now();
+  clearTimers(s);
+  try { s.rec.abort(); } catch {}
+  input.value = "";
   if (app.dataset.state === "listening") setState(null);
 }
 
-function getRecognizer() {
-  if (recognizer) return recognizer;
-  const r = new Recognition();
-  r.lang = "en-US";
-  r.interimResults = true;
-  r.continuous = false;
-  r.onstart = () => {
-    if (!session) return;
-    session.started = true;
-    setState("listening", "Listening");
-  };
-  r.onresult = (e) => {
-    if (!session) return;
-    let text = "";
-    for (const res of e.results) text += res[0].transcript;
-    input.value = text;
-    if (e.results[e.results.length - 1].isFinal) session.finalText = text;
-  };
-  r.onerror = (e) => { if (session) session.error = e.error; };
-  r.onend = () => {
-    const s = session;
-    session = null;
-    if (app.dataset.state === "listening") setState(null);
-    if (restartWanted) { restartWanted = false; setTimeout(listen, 150); return; }
-    if (s) finishSession(s);
-  };
-  recognizer = r;
-  return r;
-}
-
-function finishSession(s) {
-  const text = (s.finalText || input.value).trim();
+function finishSession(s, { aborted = false } = {}) {
+  const text = (s.finalText || s.heard).trim();
   input.value = "";
   if (text) { quietRounds = 0; silentFailures = 0; handle(text); return; }
   if (s.error && MIC_ERRORS[s.error]) {
@@ -166,9 +168,8 @@ function finishSession(s) {
     pauseConversation("Tap the circle when the microphone is ready.");
     return;
   }
-  // Ended before it ever started, or right away: start fresh next time, and say what to try.
-  if (!s.started || s.error === "aborted") {
-    recognizer = null;
+  // The microphone never opened: say what to try after it happens twice.
+  if (!s.started || aborted) {
     if (++silentFailures >= 2) {
       silentFailures = 0;
       addMsg("bot", "I'm having trouble hearing you. Tap the circle again. If it keeps happening, reload this page, and check that Settings > General > Keyboard > Enable Dictation is on.");
@@ -178,32 +179,57 @@ function finishSession(s) {
   }
   if (!conversing) { $("hint").textContent = "I didn't catch that. Tap the circle and try again."; return; }
   // Heard nothing: listen again a couple of times, then pause so the mic isn't left on.
-  if (++quietRounds <= MAX_QUIET_ROUNDS) listen();
+  if (++quietRounds <= MAX_QUIET_ROUNDS) setTimeout(() => { if (conversing && !busy && !session) listen(); }, 300);
   else pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again.");
 }
 
 function listen() {
   if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
   if (synth && (synth.speaking || synth.pending)) synth.cancel();
-  const r = getRecognizer();
-  // The last session hasn't finished closing: start again once it has.
-  if (session) { restartWanted = true; try { r.abort(); } catch {} return; }
-  session = { finalText: "", error: "", started: false };
+  stopListening();
+  const r = new Recognition();
+  r.lang = "en-US";
+  r.interimResults = true;
+  r.continuous = false;
+  const s = { rec: r, finalText: "", heard: "", error: "", started: false, timers: {} };
+  session = s;
+  // Each handler checks it still belongs to the current session, so an old listener can't interfere.
+  r.onstart = () => {
+    if (session !== s) return;
+    s.started = true;
+    clearTimeout(s.timers.start);
+    setState("listening", "Listening");
+    s.timers.nothing = setTimeout(() => endSession(s), NOTHING_HEARD_MS);
+  };
+  r.onresult = (e) => {
+    if (session !== s) return;
+    let text = "";
+    for (const res of e.results) text += res[0].transcript;
+    s.heard = text;
+    input.value = text;
+    if (e.results[e.results.length - 1].isFinal) s.finalText = text;
+    clearTimeout(s.timers.nothing);
+    // Safari sometimes never marks the words final or stops by itself, so stop once you've paused.
+    clearTimeout(s.timers.pause);
+    s.timers.pause = setTimeout(() => endSession(s), PAUSE_AFTER_WORDS_MS);
+  };
+  r.onerror = (e) => { if (session === s) s.error = e.error; };
+  r.onend = () => endSession(s);
+  s.timers.start = setTimeout(() => endSession(s, { abort: true }), START_TIMEOUT_MS);
   try {
     r.start();
   } catch {
-    // Safari can still think the old session is running; make a new listener and try once more.
-    recognizer = null;
+    clearTimers(s);
     session = null;
-    try { session = { finalText: "", error: "", started: false }; getRecognizer().start(); }
-    catch { session = null; setState(null); $("hint").textContent = "I couldn't start the microphone. Tap the circle again."; }
+    setState(null);
+    $("hint").textContent = "I couldn't start the microphone. Tap the circle again.";
   }
 }
 
 $("orb").onclick = () => {
-  if (app.dataset.state === "listening") {
+  if (app.dataset.state === "listening" && session) {
     // Mid-sentence: send what was heard. Nothing heard yet: pause.
-    if (input.value.trim() && recognizer) recognizer.stop();
+    if (session.heard.trim()) endSession(session);
     else pauseConversation();
     return;
   }
