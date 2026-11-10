@@ -265,7 +265,11 @@ function listen() {
 // This avoids Safari's speech recognition, which on iPad often stops hearing after the first question.
 const AudioCtx = window.AudioContext || window.webkitAudioContext || null;
 const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder && AudioCtx);
-const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get("geminiHearing") !== "off";
+// When Gemini can't hear you (busy, out of free uses, too slow), the circle uses Safari's own listening for a while.
+const GEMINI_BACKUP_MS = 10 * 60 * 1000;
+let geminiBackupUntil = 0;
+const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get("geminiHearing") !== "off" &&
+  !(Recognition && Date.now() < geminiBackupUntil);
 let audioCtx = null;      // made on the first tap, so the iPad lets it run
 let transcribing = false;
 const SILENCE_AFTER_SPEECH_MS = 1500; // quiet this long after you've spoken: you've finished
@@ -384,6 +388,14 @@ async function recordingStopped(s) {
     transcribing = false;
     setState(null);
     if (!(err instanceof GeminiError) || err.kind !== "empty") {
+      const useBackup = Recognition && err instanceof GeminiError && ["busy", "limit", "timeout", "failed"].includes(err.kind);
+      if (useBackup) geminiBackupUntil = Date.now() + GEMINI_BACKUP_MS;
+      const said = err.detail ? ` (Google: ${err.detail})` : "";
+      if (useBackup) {
+        addMsg("bot", `Gemini couldn't hear you just now${said}. For the next 10 minutes I'll use Safari's own listening instead. Tap the circle and say it again.`);
+        pauseConversation("Tap the circle and say it again.");
+        return;
+      }
       addMsg("bot", {
         key: "My Gemini key didn't work, so I couldn't hear you. Check the key under YouTube videos in Settings, or type below.",
         limit: "Gemini's free limit is used up for now, so I couldn't hear you. Type below, or try again later.",
@@ -391,6 +403,7 @@ async function recordingStopped(s) {
         network: "I need the internet to hear you. Check Wi-Fi, then tap the circle again.",
         timeout: "Hearing you took too long. Tap the circle to try again.",
       }[err.kind] || "I couldn't turn your voice into words. Tap the circle to try again, or type below.");
+      if (said) addMsg("bot", `Details${said.replace(/^ \(Google:/, ":").replace(/\)$/, "")}`);
       pauseConversation("Tap the circle to try again.");
       return;
     }
@@ -903,12 +916,19 @@ async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Think
   const key = store.get("geminiKey");
   if (!key) throw new GeminiError("key", "No Gemini key is saved.");
   let last = null;
+  const tried = []; // what each model said, for error messages
+  const fail = (kind, message) => {
+    const e = new GeminiError(kind, message);
+    e.detail = tried.join(", ") + (last?.why ? `. ${String(last.why).slice(0, 120)}` : "");
+    return e;
+  };
   for (const model of models) {
     let config = generationConfig;
     for (let attempt = 0; ; attempt++) {
       const out = await geminiOnce(model, key, parts, timeoutMs, config);
       if (out.timedOut) {
-        if (!moveOnTimeout) throw new GeminiError("timeout", out.why);
+        tried.push(`${model} too slow`);
+        if (!moveOnTimeout) throw fail("timeout", out.why);
         last = out;
         setState("thinking", "Gemini is slow, trying another model");
         break;
@@ -920,6 +940,7 @@ async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Think
         return out.text;
       }
       last = out;
+      tried.push(`${model} ${out.status}`);
       if (/api key/i.test(out.why) || out.status === 401) throw new GeminiError("key", "The Gemini API key didn't work.");
       const busy = out.status === 429 || out.status >= 500;
       if (!busy) break; // this model can't do it (missing, or the request is the problem): try the next one
@@ -931,9 +952,9 @@ async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Think
       setState("thinking", workingLabel);
     }
   }
-  if (last.status === 429) throw new GeminiError("limit", "Gemini's free limit is used up for now on every free model.");
-  if (last.status >= 500) throw new GeminiError("busy", "Gemini is too busy right now, even after retrying.");
-  throw new GeminiError("failed", `Gemini returned status ${last.status}. ${last.why}`.trim());
+  if (last.status === 429) throw fail("limit", "Gemini's free limit is used up for now on every free model.");
+  if (last.status >= 500) throw fail("busy", "Gemini is too busy right now, even after retrying.");
+  throw fail("failed", `Gemini returned status ${last.status}. ${last.why}`.trim());
 }
 
 // Errors here are read by Claude, which explains them to the user.
