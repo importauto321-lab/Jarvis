@@ -34,6 +34,13 @@ this video?". Claude passes the link to Gemini, which watches the picture and
 sound, and Claude answers from that. The video must be public; very long videos
 may hit Gemini's limits. You still need the Anthropic key too.
 
+Jarvis can also find videos by itself: ask "find a video on changing brake
+pads and teach me" or "watch the newest MrBeast video". Claude searches YouTube
+with Anthropic's web search (limited to youtube.com, at most 3 searches per
+question, about 1 cent each), picks a video, watches it through Gemini and
+answers. It says which video it chose, and an **Open the video** link appears
+under the answer.
+
 With a Gemini key saved, the circle also uses Gemini to hear you: it records
 until you stop talking, and Gemini writes down what you said. On iPad this is
 much more reliable than Safari's own speech recognition, which often stops
