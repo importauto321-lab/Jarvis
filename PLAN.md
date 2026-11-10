@@ -63,3 +63,23 @@
 - Start with Jarvis plus 2–3 workers; add more only when they're clearly better or cheaper.
 - Calls: text first, call only if there's no reply; short scripts; cheap model for simple calls. Jarvis says he's an AI
   and only calls people who gave you their number. Rough cost: 100 texts + 30 short calls ≈ $5–10/month.
+
+## The best team (for big projects: real estate, stocks, investing, Marriott)
+
+Money not the limit; the goal is the strongest team.
+
+1. **Boss/brain:** Claude. Fable 5.2 (most capable) for big decisions; Opus 5.5 for everyday work.
+2. **Researchers (two, to cross-check):** Claude with web search, plus Gemini Deep Research (or ChatGPT deep research).
+3. **Market data:** a real stock data feed (for example Polygon.io or Financial Modeling Prep) and SEC EDGAR (free company filings).
+4. **Real estate data:** ATTOM (property records), LoopNet/CoStar for commercial and hotel deals.
+5. **Analyst:** Claude with code execution for numbers, spreadsheets, deal models and charts.
+6. **Document reader:** Claude for contracts, leases, the Marriott Franchise Disclosure Document (FDD), and SEC filings.
+7. **Trading desk (later, careful):** Alpaca with paper trading first. Real trades only with your approval, every time.
+8. **Hands:** Claude in Chrome on the iMac for websites without an API (load boards, listing sites).
+9. **Phone and texts:** Retell AI and Twilio.
+10. **Memory and files:** Managed Agents memory plus Google Drive.
+
+**Human team (AI doesn't replace these on big money):** CPA, real estate attorney, licensed financial advisor,
+and a franchise attorney or consultant for any Marriott hotel deal.
+
+**Rules:** AI researches and recommends, you decide. No money moves without your OK. Every big claim gets a second source.
