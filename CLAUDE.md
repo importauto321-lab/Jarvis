@@ -24,7 +24,7 @@ Read this first in every new session. It sums up earlier sessions so the user do
   - Server tool: Anthropic web search (`web_search_20260209`), limited to youtube.com, max 3 uses; only offered with a Gemini key.
     The tool loop resumes `pause_turn`.
   - **Memory** lives in localStorage (`jarvis.memory`) and is appended to the system prompt; Settings → Memory lists it.
-  - **Hearing:** with a Gemini key, the circle records (MediaRecorder + loudness meter), converts to 16 kHz WAV, and Gemini
+  - **Hearing:** with a Gemini key, the circle records (MediaRecorder + loudness meter; stops after 2.5 s of quiet), converts to 16 kHz WAV, and Gemini
     transcribes (`HEARING_MODELS`, lite model first, thinking off, 15 s per model, one retry). If Gemini fails, Safari's own
     SpeechRecognition is used for 10 minutes. Without a key, Safari's SpeechRecognition (a fresh recognizer per tap).
   - **Gemini calls** go through `geminiGenerate()`: it first asks Google which Flash models the key can use (`geminiModelNames`,
