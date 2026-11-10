@@ -20,7 +20,8 @@ Read this first in every new session. It sums up earlier sessions so the user do
     The system prompt changes mid-conversation (memory, tools), so requests set thinking `block_binding` to `drop_block`
     (beta `thinking-binding-controls-2026-08-01`); without it a replayed thinking block is a 400.
   - Client tools (in `GOOGLE_TOOLS`, which also holds non-Google tools): Gmail and Calendar (after Connect Google),
-    `write_text_message`, `start_phone_call`, `watch_youtube_video` (Gemini), `save_memory` / `update_memory` / `delete_memory`.
+    `write_text_message`, `start_phone_call`, `get_weather` (Open-Meteo, no key), `get_my_location` / `find_nearby`
+    (only with Settings → Use my location; BigDataCloud names the city; Apple Maps link), `watch_youtube_video` (Gemini), `save_memory` / `update_memory` / `delete_memory`.
   - Server tool: Anthropic web search (`web_search_20260209`), limited to youtube.com, max 3 uses; only offered with a Gemini key.
     The tool loop resumes `pause_turn`.
   - **Memory** lives in localStorage (`jarvis.memory`) and is appended to the system prompt; Settings → Memory lists it.

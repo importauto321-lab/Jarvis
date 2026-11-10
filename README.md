@@ -56,6 +56,13 @@ much more reliable than Safari's own speech recognition, which often stops
 hearing after the first question. Turn off **Use Gemini to hear me** in
 Settings to go back to Safari's listening; then your voice isn't sent to Google.
 
+Turn on **Use my location** in Settings to let Jarvis answer "what's the weather
+here?", "find a gas station near me" (a button opens Apple Maps) or "how far am I
+from...". Your location is checked only when a question needs it and sent to
+Claude with that question; the weather comes from Open-Meteo and the city name
+from BigDataCloud, both free with no key. Weather for a named city works even
+with location off.
+
 Tap the circle once to start a conversation: after each answer Jarvis starts
 listening again by itself, so there's nothing to press. Tap the circle (or say
 "stop listening") to pause; it also pauses after a few quiet turns. Pick a
@@ -115,7 +122,7 @@ makes each sign-in run out after about an hour, and a site without its own
 server can't renew it silently, so Jarvis renews it the next time you tap the
 circle or send something. Because you already allowed access, Google's window
 just opens and closes. Nothing is sent
-anywhere except Google (including Gemini, for YouTube videos) and, for answering your questions, Anthropic's API. The
+anywhere except Google (including Gemini, for YouTube videos), Anthropic's API for answering your questions, and, for location and weather, Open-Meteo and BigDataCloud. The
 page's Content Security Policy blocks every other site, and Anthropic's SDK is
 served from this repository (`docs/vendor/`) rather than a CDN.
 

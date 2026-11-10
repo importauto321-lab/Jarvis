@@ -617,6 +617,28 @@ function runSkills(command) {
 let textReady = null; // a draft Claude wrote this turn, shown after its reply
 let callReady = null; // a call Claude set up this turn, shown after its reply
 let videoWatched = ""; // the YouTube video Claude watched this turn, linked under its reply
+let mapsReady = null;  // a Maps search Claude set up this turn, shown as a button under its reply
+
+// The device's location, only when "Use my location" is on. Kept for 2 minutes so one answer doesn't ask twice.
+let lastPosition = null;
+function myPosition() {
+  if (store.get("location") !== "on") return Promise.reject(new Error("Location is off. Tell the user to turn on Use my location in Settings."));
+  if (lastPosition && Date.now() - lastPosition.at < 120000) return Promise.resolve(lastPosition);
+  if (!navigator.geolocation) return Promise.reject(new Error("This browser can't share location."));
+  return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
+    (p) => { lastPosition = { lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4), accuracy: Math.round(p.coords.accuracy), at: Date.now() }; resolve(lastPosition); },
+    (err) => reject(new Error(err.code === 1
+      ? "Safari isn't allowing location. Tell the user: Settings app > Apps > Safari > Location > Ask or Allow, then try again."
+      : "Couldn't get the location just now. Say so briefly.")),
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 }));
+}
+// City and area for a spot, from a free service with no key. Empty if it doesn't answer.
+async function placeName(lat, lon) {
+  try {
+    const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`).then((x) => x.json());
+    return [r.locality || r.city, r.principalSubdivision, r.countryCode].filter(Boolean).join(", ");
+  } catch { return ""; }
+}
 
 // "555 123-4567" or "+1 (555) 123 4567" becomes "5551234567" / "+15551234567"; a name becomes "".
 function phoneNumber(text) {
@@ -1224,6 +1246,62 @@ const GOOGLE_TOOLS = [
     },
   },
   {
+    name: "get_my_location",
+    scopes: null, needsLocation: true,
+    description: "Get where the user is right now (city, area and coordinates) from their device's location. " +
+      "Use it when an answer depends on where they are: directions, distances, what's nearby, local time zones, local news.",
+    input_schema: { type: "object", properties: {} },
+    async run() {
+      const here = await myPosition();
+      const place = await placeName(here.lat, here.lon);
+      return { ...(place ? { place } : {}), latitude: here.lat, longitude: here.lon, accurate_to_meters: here.accuracy };
+    },
+  },
+  {
+    name: "get_weather",
+    scopes: null, // free service, no key
+    description: "Get the current weather and the next few days' forecast. Leave place empty for where the user is " +
+      "(needs location turned on), or give a city or town name.",
+    input_schema: { type: "object", properties: { place: { type: "string", description: "A city or town, or empty for the user's location" } } },
+    async run({ place }) {
+      let lat, lon, name = "";
+      if (String(place || "").trim()) {
+        const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(String(place).trim())}`)
+          .then((x) => x.json()).catch(() => ({}));
+        const hit = r.results?.[0];
+        if (!hit) throw new Error(`Couldn't find a place called ${place}. Ask the user which one they mean.`);
+        ({ latitude: lat, longitude: lon } = hit);
+        name = [hit.name, hit.admin1, hit.country].filter(Boolean).join(", ");
+      } else {
+        if (store.get("location") !== "on") throw new Error("Location is off. Ask which city, or tell the user to turn on Use my location in Settings.");
+        const here = await myPosition();
+        lat = here.lat; lon = here.lon; name = (await placeName(lat, lon)) || "the user's location";
+      }
+      const us = /-US$/i.test(navigator.language || "en-US");
+      const q = new URLSearchParams({ latitude: lat, longitude: lon, timezone: "auto", forecast_days: "4",
+        current: "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation",
+        daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        temperature_unit: us ? "fahrenheit" : "celsius", wind_speed_unit: us ? "mph" : "kmh", precipitation_unit: us ? "inch" : "mm" });
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`).catch(() => null);
+      if (!res?.ok) throw new Error("The weather service didn't answer. Say so briefly.");
+      const w = await res.json();
+      return { place: name, units: w.current_units, current: w.current, daily: w.daily,
+        weather_codes: "WMO codes: 0 clear, 1-3 partly cloudy to overcast, 45-48 fog, 51-57 drizzle, 61-67 rain, 71-77 snow, 80-82 showers, 95-99 thunderstorms" };
+    },
+  },
+  {
+    name: "find_nearby",
+    scopes: null, needsLocation: true,
+    description: "Show a button that opens Maps searching near the user, like gas stations, restaurants or a shipping port. " +
+      "You can't see the results yourself; tell the user the button is ready.",
+    input_schema: { type: "object", properties: { what: { type: "string", description: "What to search for, like \"gas station\"" } }, required: ["what"] },
+    async run({ what }) {
+      const here = await myPosition();
+      mapsReady = { href: `https://maps.apple.com/?q=${encodeURIComponent(what)}&sll=${here.lat},${here.lon}`, what };
+      return "A button to open Maps is under your reply. Tell the user it's ready.";
+    },
+  },
+  {
     name: "watch_youtube_video",
     scopes: null, // needs a Gemini key instead of Google sign-in
     needsGemini: true,
@@ -1283,7 +1361,8 @@ const GOOGLE_TOOLS = [
 ];
 
 GOOGLE_TOOLS.push(...MEMORY_TOOLS);
-const toolAllowed = (t) => (!t.scopes || t.scopes.some(hasScope)) && (!t.writes || allowActions) && (!t.needsGemini || !!store.get("geminiKey"));
+const toolAllowed = (t) => (!t.scopes || t.scopes.some(hasScope)) && (!t.writes || allowActions) && (!t.needsGemini || !!store.get("geminiKey"))
+  && (!t.needsLocation || store.get("location") === "on");
 const allowedTools = () => GOOGLE_TOOLS.filter(toolAllowed);
 
 async function runTool(block) {
@@ -1331,6 +1410,9 @@ const SYSTEM = `You are ${NAME}, a personal assistant with real class: calm, con
   "If the user asks you to send an email or add an event and you have no tool for it, tell them to turn on " +
   "\"Let Jarvis send email and add calendar events\" in Settings and tap Connect Google again. " +
   "Each user message starts with the current local time in brackets.\n\n" +
+  "For weather, use get_weather. When you have get_my_location, use it whenever an answer depends on where the user is, " +
+  "and find_nearby when they want to find a place near them. If you have no get_my_location and the user asks something that needs " +
+  "where they are, ask them, or tell them they can turn on Use my location in Settings.\n\n" +
   "You have a long-term memory, listed at the end of these instructions. Use it to answer and to personalize your help. " +
   "Save to it when the user tells you something worth knowing next time, asks you to remember something, or asks you to learn " +
   "something (save the useful steps or facts, briefly). Don't save small talk, one-off requests, passwords, codes or account numbers. " +
@@ -1502,7 +1584,7 @@ async function handle(raw, { tapped = false } = {}) {
   await waitForGoogle();
   // Spoken questions can't open Google's sign-in window (that needs a tap), so offer a button instead.
   if (googleRemembered && !googleConnected() && !connecting) offerGoogleReconnect();
-  textReady = null; callReady = null; videoWatched = ""; memorySaved = [];
+  textReady = null; callReady = null; mapsReady = null; videoWatched = ""; memorySaved = [];
   const reply = await askClaude(command);
   bubble.classList.remove("pending");
   bubble.textContent = reply;
@@ -1517,6 +1599,7 @@ async function handle(raw, { tapped = false } = {}) {
   let spoken = reply;
   if (textReady) { showTextCard(textReady); textReady = null; }
   if (callReady) { showCallCard(callReady); callReady = null; }
+  if (mapsReady) { addLinkButton(bubble, mapsReady.href, "Open Maps"); mapsReady = null; }
   if (pending) { showConfirmCard(pending); spoken = reply + " " + pending.spoken; }
   log.scrollTop = log.scrollHeight;
   setState(null);
@@ -1661,6 +1744,14 @@ function saveGeminiKey() {
 }
 $("saveGemini").onclick = saveGeminiKey;
 $("geminiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveGeminiKey(); } });
+$("useLocation").checked = store.get("location") === "on";
+$("useLocation").onchange = (e) => {
+  store.set("location", e.target.checked ? "on" : "off");
+  lastPosition = null;
+  // Ask Safari for permission right away, during the tap.
+  if (e.target.checked) myPosition().catch((err) => { $("locationStatus").textContent = String(err.message).replace(/^.*Tell the user: /, ""); });
+  else $("locationStatus").textContent = "";
+};
 $("geminiHearing").checked = store.get("geminiHearing") !== "off";
 $("geminiHearing").onchange = (e) => { stopListening(); store.set("geminiHearing", e.target.checked ? "on" : "off"); };
 $("clearGemini").onclick = () => { store.set("geminiKey", null); renderGeminiStatus(); addMsg("bot", "Gemini key removed from this device."); };
