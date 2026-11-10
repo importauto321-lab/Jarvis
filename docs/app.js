@@ -94,8 +94,15 @@ function unlockSpeech() {
   } catch { priming = false; }
 }
 
+// Safari (iPad) lets a page say what its sound is for. While recording it must be "play-and-record", which plays
+// other sound quietly, like a phone call; for speaking it should be "playback", which plays at full volume.
+function setAudioMode(type) {
+  try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {}
+}
+
 function speak(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
+  if (!session) setAudioMode("playback");
   const wait = micClosedAt + 350 - Date.now();
   if (wait > 0) { setTimeout(() => speak(text, then), wait); return; }
   // Safari sometimes never says speech has finished (or started), which would stop hands-free listening for good.
@@ -281,7 +288,10 @@ async function listenRecorded() {
   session = s;
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    // Echo cancellation puts the iPad in phone-call mode, which makes Jarvis's voice very quiet afterwards.
+    // He never listens while talking, so it isn't needed.
+    setAudioMode("play-and-record");
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
   } catch (err) {
     if (session !== s) return;
     session = null;
@@ -348,6 +358,7 @@ function releaseMic(s) {
   s.stream?.getTracks().forEach((t) => t.stop());
   // A running audio processor keeps the iPad in "call" mode, where speech is very quiet or silent.
   try { audioCtx?.suspend(); } catch {}
+  setAudioMode("playback");
 }
 
 async function recordingStopped(s) {
