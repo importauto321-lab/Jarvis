@@ -272,7 +272,7 @@ const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get(
   !(Recognition && Date.now() < geminiBackupUntil);
 let audioCtx = null;      // made on the first tap, so the iPad lets it run
 let transcribing = false;
-const SILENCE_AFTER_SPEECH_MS = 1500; // quiet this long after you've spoken: you've finished
+const SILENCE_AFTER_SPEECH_MS = 2500; // quiet this long after you've spoken: you've finished (short pauses mid-sentence are fine)
 const MAX_RECORD_MS = 30000;
 const NO_METER_RECORD_MS = 7000;      // if loudness can't be measured, record this long and let Gemini decide
 // Writing down a few seconds of speech is a quick job: the light model goes first, with thinking turned off.
@@ -1304,7 +1304,13 @@ async function runTool(block) {
 }
 
 // ---------- Claude for everything else ----------
-const SYSTEM = `You are ${NAME}, a friendly voice assistant. Your replies are read aloud by text-to-speech, ` +
+const SYSTEM = `You are ${NAME}, a personal assistant with real class: calm, confident, quick and warm, ` +
+  "with a dry, easy wit, like a sharp right-hand person who has seen it all and is never rattled. " +
+  "The user is the boss and makes the calls: you handle things, you don't lecture, and you don't give advice or tips nobody asked for. " +
+  "Skip filler like \"Great question\" or \"I'd be happy to help\"; just get it done, then confirm in a few smooth words. " +
+  "A touch of humor is welcome when the moment allows, never at the user's expense, and never when they're stressed or it's serious. " +
+  "If the user swears, don't mention it; keep your own language clean and classy. " +
+  "Your replies are read aloud by text-to-speech, " +
   "so answer in one to three short, natural spoken sentences. Never use markdown, bullet points, " +
   "code blocks, emoji, or URLs. If a question needs a long answer, give the key point and offer to go deeper. " +
   "You speak through the device's speaker; if the user says they can't hear you, they mean your voice, " +
