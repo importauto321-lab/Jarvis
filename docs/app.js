@@ -381,7 +381,7 @@ async function recordingStopped(s) {
     const audio = await toWav(blob).catch(() => blob);
     const words = await geminiGenerate(
       [{ inline_data: { mime_type: audio.type || "audio/mp4", data: await toBase64(audio) } }, { text: TRANSCRIBE_PROMPT }],
-      { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, moveOnTimeout: true, retryWaits: [1000],
+      { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, light: true, moveOnTimeout: true, retryWaits: [1000],
         generationConfig: { thinkingConfig: { thinkingBudget: 0 } } });
     s.heard = /^\W*silence\W*$/i.test(words) ? "" : words.replace(/^["']|["']$/g, "").trim();
   } catch (err) {
@@ -908,13 +908,43 @@ async function geminiOnce(model, key, parts, timeoutMs, generationConfig) {
   return { text: (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(" ").trim() };
 }
 
+// Google adds and retires free models often, so ask which ones this key can use (once per visit).
+// The fixed lists are only a backup if that question fails.
+let geminiAvailable = null;
+async function geminiModelNames(key) {
+  if (geminiAvailable) return geminiAvailable;
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", { headers: { "x-goog-api-key": key } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const names = (data.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map((m) => String(m.name || "").replace(/^models\//, ""))
+      // Only general Flash models: not image, speech, live, embedding or experimental ones.
+      .filter((n) => /^gemini-.*flash/.test(n) && !/image|tts|audio|live|embed|exp|robotics|computer|thinking/.test(n));
+    if (names.length) geminiAvailable = names;
+    return geminiAvailable;
+  } catch { return null; }
+}
+
+// Newest stable models first, previews last; light jobs (hearing) put Flash-Lite models first.
+function geminiPick(names, fallback, light) {
+  const version = (n) => parseFloat((n.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1]);
+  const score = (n) => (/preview/.test(n) ? 1000 : 0) + (/-lite/.test(n) === light ? 0 : 500) - version(n);
+  const sorted = [...names].sort((a, b) => score(a) - score(b));
+  // Keep the list short so a bad moment doesn't mean a long wait.
+  return sorted.length ? sorted.slice(0, 4) : fallback;
+}
+
 // Busy (overloaded or briefly rate limited) is retried, then the next free model is tried.
 // moveOnTimeout: a slow answer counts as busy and the next model is tried (for short jobs like hearing you);
 // otherwise a timeout ends the request (a long video can't be retried quickly).
 async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Thinking", models = GEMINI_MODELS,
-  generationConfig = null, moveOnTimeout = false, retryWaits = GEMINI_RETRY_WAITS } = {}) {
+  generationConfig = null, moveOnTimeout = false, retryWaits = GEMINI_RETRY_WAITS, light = false } = {}) {
   const key = store.get("geminiKey");
   if (!key) throw new GeminiError("key", "No Gemini key is saved.");
+  const available = await geminiModelNames(key);
+  if (available) models = geminiPick(available, models, light);
   let last = null;
   const tried = []; // what each model said, for error messages
   const fail = (kind, message) => {
@@ -937,7 +967,8 @@ async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Think
         break;
       }
       // A model that doesn't accept the speed settings gets the request without them.
-      if (out.status === 400 && config && /thinking|generation_?config/i.test(out.why)) { config = null; attempt--; continue; }
+      // (Newer models reject "thinking off", and Google's wording for that changes, so any 400 gets one plain retry.)
+      if (out.status === 400 && config) { config = null; attempt--; continue; }
       if (out.text !== undefined) {
         if (!out.text) throw new GeminiError("empty", "Gemini didn't say anything.");
         return out.text;

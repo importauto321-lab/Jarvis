@@ -25,7 +25,8 @@ Read this first in every new session. It sums up earlier sessions so the user do
   - **Hearing:** with a Gemini key, the circle records (MediaRecorder + loudness meter), converts to 16 kHz WAV, and Gemini
     transcribes (`HEARING_MODELS`, lite model first, thinking off, 15 s per model, one retry). If Gemini fails, Safari's own
     SpeechRecognition is used for 10 minutes. Without a key, Safari's SpeechRecognition (a fresh recognizer per tap).
-  - **Gemini calls** go through `geminiGenerate()`: retries busy models, then falls back across free Flash models; errors are
+  - **Gemini calls** go through `geminiGenerate()`: it first asks Google which Flash models the key can use (`geminiModelNames`,
+    once per visit; the fixed lists are only a backup), retries busy models, then falls back across them; errors are
     `GeminiError` with a `kind` and a `detail` saying what each model returned.
 - **Computer Jarvis** (`jarvis/`, Python, `python -m jarvis`). Same idea, simpler: skills, Claude with a tool loop,
   YouTube via `GEMINI_API_KEY`. Tests: `python -m pytest`.
