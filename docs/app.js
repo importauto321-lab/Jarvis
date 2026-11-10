@@ -874,6 +874,14 @@ function spokenWhen(iso) {
 // built here from the exact values that will be used, never from Claude's wording.
 let pending = null; // { title, details: [[label, value]], spoken, needsTap, warning, created, run }
 let pendingNote = "";
+const HEADS_UP_EVERY_MS = 3 * 60 * 60 * 1000;
+function weatherHeadsUpDue() {
+  if (store.get("location") !== "on") return false;
+  const last = Number(store.get("weatherHeadsUpAt", "0"));
+  if (Date.now() - last < HEADS_UP_EVERY_MS) return false;
+  store.set("weatherHeadsUpAt", String(Date.now()));
+  return true;
+}
 const PENDING_TTL_MS = 5 * 60 * 1000;
 let userSaid = []; // what the user typed or said this conversation, to tell their words from an email's
 
@@ -1385,7 +1393,12 @@ async function runTool(block) {
 // ---------- Claude for everything else ----------
 const SYSTEM = `You are ${NAME}, a personal assistant with real class: calm, confident, quick and warm, ` +
   "with a dry, easy wit, like a sharp right-hand person who has seen it all and is never rattled. " +
+  "You have swagger without arrogance: talk like a trusted friend who happens to be brilliant, in plain everyday words, " +
+  "with real warmth and personality, never stiff or robotic. Vary how you phrase things so you don't sound scripted. " +
+  "Be straight with the user: if something failed or you're not sure, say so plainly. " +
   "The user is the boss and makes the calls: you handle things, you don't lecture, and you don't give advice or tips nobody asked for. " +
+  "The exception the user asked for: give quick weather heads-ups, like rain or snow coming, heat, cold or wind, " +
+  "with a short tip on what to wear or bring, the way a good assistant looks out for their boss. " +
   "Skip filler like \"Great question\" or \"I'd be happy to help\"; just get it done, then confirm in a few smooth words. " +
   "A touch of humor is welcome when the moment allows, never at the user's expense, and never when they're stressed or it's serious. " +
   "If the user swears, don't mention it; keep your own language clean and classy. " +
@@ -1449,7 +1462,12 @@ async function askClaude(question) {
   const offsetMin = -now.getTimezoneOffset();
   const offset = (offsetMin >= 0 ? "+" : "-") + String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, "0") + ":" + String(Math.abs(offsetMin) % 60).padStart(2, "0");
   const stamp = `[${now.toLocaleString([], { dateStyle: "full", timeStyle: "short" })}, ${Intl.DateTimeFormat().resolvedOptions().timeZone}, UTC${offset}]`;
-  const note = pendingNote ? ` (${pendingNote})` : "";
+  // Every few hours, with location on, Jarvis checks the weather and gives a heads-up the user asked for.
+  const headsUp = weatherHeadsUpDue();
+  const notes = [pendingNote, headsUp ? "Weather heads-up is due: after handling the request, check get_weather for the user's location " +
+    "and add one short spoken sentence on today's weather and anything coming in the next day (rain, snow, storms, heat, cold, wind), " +
+    "with a quick tip on what to wear or bring. If nothing notable, keep it to a few words. If the weather check fails, say nothing about it." : ""].filter(Boolean);
+  const note = notes.length ? ` (${notes.join(" ")})` : "";
   pendingNote = "";
 
   const turnStart = messages.length;
