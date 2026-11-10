@@ -75,6 +75,24 @@ if (synth) synth.addEventListener?.("voiceschanged", loadVoices);
 const chosenVoice = () => voices.find((v) => v.voiceURI === voiceURI) || null;
 
 let micClosedAt = 0; // when the microphone last closed; the iPad needs a moment before it can speak
+let speechUnlocked = false;
+let priming = false;      // the silent unlocking utterance is playing; don't cancel it
+let warnedSilent = false;
+
+// iPad Safari only lets a page talk if it has spoken once during a tap. Answers arrive seconds after the tap,
+// so every tap (circle, Send, suggestions) says a silent word first, which unlocks speaking for later.
+function unlockSpeech() {
+  if (speechUnlocked || !synth || !voiceOn) return;
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    priming = true;
+    u.onend = u.onerror = () => { priming = false; };
+    setTimeout(() => { priming = false; }, 1500);
+    synth.speak(u);
+    speechUnlocked = true;
+  } catch { priming = false; }
+}
 
 function speak(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
@@ -91,13 +109,20 @@ function speak(text, then) {
     if (callThen) then?.();
   };
   const guard = setTimeout(finish, 5000 + text.length * 90);
+  // Speech that never starts means the iPad blocked it or its sound is off: say so once, on screen.
+  let started = false;
+  setTimeout(() => {
+    if (started || done || warnedSilent) return;
+    warnedSilent = true;
+    $("hint").textContent = "I wrote my answer but couldn't say it out loud. Turn the volume up and Silent Mode off, then tap Test voice in Settings.";
+  }, 4000);
   try {
-    if (synth.speaking || synth.pending) synth.cancel();
+    if ((synth.speaking || synth.pending) && !priming) synth.cancel();
     try { synth.resume(); } catch {}
     const u = new SpeechSynthesisUtterance(text);
     const voice = chosenVoice();
     if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "en-US"; }
-    u.onstart = () => { if (!done) setState("speaking", "Speaking"); };
+    u.onstart = () => { started = true; if (!done) setState("speaking", "Speaking"); };
     u.onend = () => finish();
     u.onerror = (e) => finish(e.error !== "interrupted" && e.error !== "canceled");
     synth.speak(u);
@@ -187,7 +212,7 @@ function finishSession(s, { aborted = false } = {}) {
 function listen() {
   if (hearWithGemini()) { listenRecorded(); return; }
   if (!Recognition) { addMsg("bot", "This browser can't use the microphone. Open this page in Safari or Chrome, or type below."); return; }
-  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  if (synth && (synth.speaking || synth.pending) && !priming) synth.cancel();
   stopListening();
   const r = new Recognition();
   r.lang = "en-US";
@@ -236,7 +261,7 @@ const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorde
 const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get("geminiHearing") !== "off";
 let audioCtx = null;      // made on the first tap, so the iPad lets it run
 let transcribing = false;
-const SILENCE_AFTER_SPEECH_MS = 1300; // quiet this long after you've spoken: you've finished
+const SILENCE_AFTER_SPEECH_MS = 1500; // quiet this long after you've spoken: you've finished
 const MAX_RECORD_MS = 30000;
 const NO_METER_RECORD_MS = 7000;      // if loudness can't be measured, record this long and let Gemini decide
 // Writing down a few seconds of speech is a quick job: the light model goes first, with thinking turned off.
@@ -250,7 +275,7 @@ function wakeAudio() {
 }
 
 async function listenRecorded() {
-  if (synth && (synth.speaking || synth.pending)) synth.cancel();
+  if (synth && (synth.speaking || synth.pending) && !priming) synth.cancel();
   stopListening();
   const s = { kind: "record", heard: "", finalText: "", error: "", started: false, spoke: false, timers: {}, chunks: [] };
   session = s;
@@ -295,7 +320,7 @@ async function listenRecorded() {
       const level = Math.sqrt(sum / buf.length);
       const now = Date.now();
       if (now - t0 < 300) { floor = (floor * samples + level) / ++samples; return; }
-      if (level > Math.max(0.012, Math.min(floor, 0.03) * 2.5)) { s.spoke = true; lastLoud = now; }
+      if (level > Math.max(0.006, Math.min(floor, 0.01) * 2.5)) { s.spoke = true; lastLoud = now; }
       if (s.spoke && now - lastLoud > SILENCE_AFTER_SPEECH_MS) finishRecording(s);
     }, 100);
     s.timers.nothing = setTimeout(() => { if (!s.spoke) finishRecording(s); }, NOTHING_HEARD_MS);
@@ -321,6 +346,8 @@ function releaseMic(s) {
   clearTimers(s);
   try { s.source?.disconnect(); } catch {}
   s.stream?.getTracks().forEach((t) => t.stop());
+  // A running audio processor keeps the iPad in "call" mode, where speech is very quiet or silent.
+  try { audioCtx?.suspend(); } catch {}
 }
 
 async function recordingStopped(s) {
@@ -400,6 +427,7 @@ $("orb").onclick = () => {
   }
   wakeAudio();
   if (synth && synth.speaking) { synth.cancel(); setState(null); }
+  unlockSpeech();
   // Listening has to start right here, inside the tap, or the iPad won't open the microphone.
   conversing = handsFree;
   quietRounds = 0;
@@ -1483,11 +1511,12 @@ $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value;
   input.value = "";
+  unlockSpeech();
   ensureGoogle();
   handle(text);
 });
 log.addEventListener("click", (e) => {
-  if (e.target.classList.contains("chip")) { ensureGoogle(); handle(e.target.textContent); }
+  if (e.target.classList.contains("chip")) { unlockSpeech(); ensureGoogle(); handle(e.target.textContent); }
 });
 
 // ---------- settings ----------
