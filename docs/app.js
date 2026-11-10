@@ -499,6 +499,7 @@ async function listenRecorded() {
       const level = Math.sqrt(sum / buf.length);
       const now = Date.now();
       if (now - t0 < 300) { floor = (floor * samples + level) / ++samples; return; }
+      s.peak = Math.max(s.peak || 0, level);
       if (level > Math.max(0.006, Math.min(floor, 0.01) * 2.5)) { s.spoke = true; lastLoud = now; }
       if (s.spoke && now - lastLoud > SILENCE_AFTER_SPEECH_MS) finishRecording(s);
     }, 100);
@@ -537,8 +538,9 @@ async function recordingStopped(s) {
   s.done = true;
   releaseMic(s);
   if (s.cancelled) return;
-  if (!s.spoke && !s.noMeter) { finishSession(s); return; }
+  if (!s.spoke && !s.noMeter) { $("hint").textContent = `Mic check: no voice detected (loudest sound ${(s.peak || 0).toFixed(3)}). Speak closer to the iPad.`; finishSession(s); return; }
   const blob = new Blob(s.chunks, { type: (s.mr?.mimeType || "audio/mp4").split(";")[0] });
+  $("hint").textContent = `Mic check: recorded ${blob.size} bytes, loudest sound ${(s.peak || 0).toFixed(3)}, ${s.spoke ? "voice detected" : "no voice detected"}.`;
   if (blob.size < 1000) { finishSession(s); return; }
   transcribing = true;
   setState("thinking", "Hearing you");
@@ -549,6 +551,7 @@ async function recordingStopped(s) {
       { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, light: true, moveOnTimeout: true, retryWaits: [1000],
         generationConfig: { thinkingConfig: { thinkingBudget: 0 } } });
     s.heard = /^\W*silence\W*$/i.test(words) ? "" : words.replace(/^["']|["']$/g, "").trim();
+    $("hint").textContent += ` Gemini heard: "${s.heard || "nothing"}".`;
   } catch (err) {
     transcribing = false;
     setState(null);
