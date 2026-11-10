@@ -214,6 +214,9 @@ async function speakGemini(text, then) {
   stopGeminiVoice();
   if (synth && (synth.speaking || synth.pending) && !priming) synth.cancel();
   const token = ttsToken;
+  const micWait = micClosedAt + 800 - Date.now();
+  if (micWait > 0) await new Promise((r) => setTimeout(r, micWait));
+  if (token !== ttsToken) return;
   setState("thinking", "Getting my voice ready");
   const wav = await geminiSpeech(text, token);
   if (token !== ttsToken) return; // stopped while Google was working
@@ -254,7 +257,7 @@ async function speakGemini(text, then) {
 function speakApple(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
   if (!session) setAudioMode("playback");
-  const wait = micClosedAt + 350 - Date.now();
+  const wait = micClosedAt + 800 - Date.now();
   if (wait > 0) { setTimeout(() => speakApple(text, then), wait); return; }
   // Safari sometimes never says speech has finished (or started), which would stop hands-free listening for good.
   // So "done" also happens after about as long as the answer takes to say, plus a margin.
@@ -326,6 +329,7 @@ function endSession(s, { abort = false } = {}) {
   if (session !== s) return;
   session = null;
   micClosedAt = Date.now();
+  setAudioMode("playback");
   clearTimers(s);
   try { abort ? s.rec.abort() : s.rec.stop(); } catch {}
   if (app.dataset.state === "listening") setState(null);
@@ -337,6 +341,7 @@ function stopListening() {
   if (!s) { if (app.dataset.state === "listening") setState(null); return; }
   session = null;
   micClosedAt = Date.now();
+  setAudioMode("playback");
   clearTimers(s);
   if (s.kind === "record") { s.cancelled = true; try { s.mr?.stop(); } catch {} releaseMic(s); }
   else { try { s.rec.abort(); } catch {} }
