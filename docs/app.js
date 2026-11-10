@@ -437,7 +437,7 @@ const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorde
 // When Gemini can't hear you (busy, out of free uses, too slow), the circle uses Safari's own listening for a while.
 const GEMINI_BACKUP_MS = 10 * 60 * 1000;
 let geminiBackupUntil = 0;
-const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get("geminiHearing") !== "off" &&
+const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get("geminiHearing") === "on" &&
   !(Recognition && Date.now() < geminiBackupUntil);
 let audioCtx = null;      // made on the first tap, so the iPad lets it run
 let transcribing = false;
@@ -1977,7 +1977,7 @@ $("useLocation").onchange = (e) => {
   if (e.target.checked) myPosition().catch((err) => { $("locationStatus").textContent = String(err.message).replace(/^.*Tell the user: /, ""); });
   else $("locationStatus").textContent = "";
 };
-$("geminiHearing").checked = store.get("geminiHearing") !== "off";
+$("geminiHearing").checked = store.get("geminiHearing") === "on"; // off unless chosen: Safari's own listening is the default
 $("geminiHearing").onchange = (e) => { stopListening(); store.set("geminiHearing", e.target.checked ? "on" : "off"); };
 $("clearGemini").onclick = () => { store.set("geminiKey", null); renderGeminiStatus(); addMsg("bot", "Gemini key removed from this device."); };
 $("handsFree").onchange = (e) => {
