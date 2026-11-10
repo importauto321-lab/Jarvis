@@ -17,6 +17,8 @@ Read this first in every new session. It sums up earlier sessions so the user do
 - **Web Jarvis** (`docs/`, served by GitHub Pages at importauto321-lab.github.io/Jarvis). The main product.
   - `docs/app.js` is the whole app; `docs/index.html` holds the page, CSP and Settings; `docs/privacy.html` the privacy policy.
   - Claude (`claude-opus-5-5`, effort low, server-side fallbacks) answers anything the built-in skills don't.
+    The system prompt changes mid-conversation (memory, tools), so requests set thinking `block_binding` to `drop_block`
+    (beta `thinking-binding-controls-2026-08-01`); without it a replayed thinking block is a 400.
   - Client tools (in `GOOGLE_TOOLS`, which also holds non-Google tools): Gmail and Calendar (after Connect Google),
     `write_text_message`, `start_phone_call`, `watch_youtube_video` (Gemini), `save_memory` / `update_memory` / `delete_memory`.
   - Server tool: Anthropic web search (`web_search_20260209`), limited to youtube.com, max 3 uses; only offered with a Gemini key.

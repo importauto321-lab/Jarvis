@@ -1382,7 +1382,10 @@ async function askClaude(question) {
         messages,
         ...(tools.length ? { tools } : {}),
         output_config: { effort: "low" },
-        betas: ["server-side-fallback-2026-07-01"],
+        // Claude checks that earlier instructions didn't change since it last thought. Jarvis's instructions do change
+        // (a new memory, Google connected), so let Claude set its old notes aside instead of failing with a 400.
+        thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
+        betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
         fallbacks: "default",
       });
       if (response.stop_reason === "refusal") { messages.length = turnStart; pending = null; return "Sorry, I can't help with that one."; }
