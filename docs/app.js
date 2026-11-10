@@ -544,10 +544,20 @@ async function recordingStopped(s) {
   releaseMic(s);
   if (s.cancelled) return;
   const blob = new Blob(s.chunks, { type: (s.mr?.mimeType || "audio/mp4").split(";")[0] });
-  // A meter stuck at exactly zero next to a recording of real size means the meter is broken, not the microphone
-  // (iPad Safari does this sometimes), so let Gemini listen to the recording instead of throwing it away.
-  const meterDead = (s.peak || 0) < 0.0005 && blob.size > 30000;
-  if (!s.spoke && !s.noMeter && !meterDead) { $("hint").textContent = `Mic check: no voice detected (loudest sound ${(s.peak || 0).toFixed(3)}). Speak closer to the iPad.`; finishSession(s); return; }
+  // A recording that is completely silent (the iPad's recorder sometimes gives only silence) makes Gemini invent
+  // words, so it is never sent. Switch to Safari's own listening for a while instead, when it exists.
+  const silent = (s.peak || 0) < 0.0005;
+  if (!s.spoke && !s.noMeter) {
+    if (silent && Recognition) {
+      geminiBackupUntil = Date.now() + GEMINI_BACKUP_MS;
+      addMsg("bot", "The recorder only picked up silence, so I switched to Safari's own listening. Tap the circle and say it again.");
+      pauseConversation("Tap the circle and say it again.");
+      return;
+    }
+    $("hint").textContent = `Mic check: no voice detected (loudest sound ${(s.peak || 0).toFixed(3)}). Speak closer to the iPad.`;
+    finishSession(s);
+    return;
+  }
   $("hint").textContent = `Mic check: recorded ${blob.size} bytes, loudest sound ${(s.peak || 0).toFixed(3)}, ${s.spoke ? "voice detected" : "no voice detected"}.`;
   if (blob.size < 1000) { finishSession(s); return; }
   transcribing = true;
