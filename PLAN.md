@@ -6,7 +6,8 @@
 1. **Boss: Claude.** Jarvis's brain. Talks to you, plans, decides who does what, checks the work.
 2. **Researcher: Gemini** (free API, with Google Search). Also YouTube and hearing. No Perplexity needed.
 3. **Checker: ChatGPT** (OpenAI API key, small cost). Second opinion on big decisions; pictures.
-4. **Hands: Claude in Chrome** on the iMac. Load boards and websites, while you watch.
+4. **Hands: Claude in Chrome** on the **Mac mini** at home (left on all the time). Load boards and websites.
+   The iMac is your own workstation; Jarvis works there too.
 5. **Voice: Twilio + Retell.** Texts first, calls later, from your private favorites list.
 6. **Memory: Managed Agents.** One shared memory for iPad and iMac; runs jobs when your devices are off.
 
@@ -19,7 +20,7 @@ Big money decisions get a second AI opinion and a human professional.
 1. iPad test (page 23) and a monthly spending limit on console.anthropic.com.
 2. Boss always on (Managed Agents) + morning briefing.
 3. Researcher (Gemini) and checker (ChatGPT key).
-4. Hands on the iMac (load boards).
+4. Hands on the Mac mini (load boards). First test whether Managed Agents can do it alone.
 5. Voice (favorites list, texts, then calls).
 6. Big projects (data services, practice trading, CPA/attorney/advisor), then the app for other people.
 
