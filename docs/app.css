@@ -136,3 +136,8 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
   margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem;
   background: var(--surface); border: 1px solid var(--warn); color: var(--ink); overflow-wrap: anywhere;
 }
+
+.memory { list-style: none; margin: 0 0 8px; padding: 0; max-height: 260px; overflow-y: auto; }
+.memory li { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line, rgba(127,127,127,0.25)); font-size: 0.92rem; overflow-wrap: anywhere; }
+.memory li button { flex: none; }
+.memory-note { display: block; margin-top: 6px; font-size: 0.85rem; opacity: 0.75; }

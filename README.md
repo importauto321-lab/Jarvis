@@ -24,6 +24,15 @@ save. After a minute it's live at
 Built-in commands work right away. For general questions, tap **Settings** and
 paste an Anthropic API key; it's stored only in that browser.
 
+### Memory
+
+Jarvis remembers things between conversations: what you tell him about
+yourself, your preferences, and what he learned (for example the steps from a
+video). Claude decides what's worth saving and says so in the chat, and you can
+also say "remember that..." or "forget that...". Memories are stored only in
+that browser and sent to Claude with each question. **Settings → Memory** lists
+them, with **Forget** buttons and **Forget everything**.
+
 ### YouTube videos
 
 To have Jarvis watch a YouTube video, get a free Gemini API key at
