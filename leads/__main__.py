@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-from . import drafts, ranking, store
+from . import drafts, finder, ranking, store
 
 
 def main(argv=None) -> int:
@@ -18,6 +18,13 @@ def main(argv=None) -> int:
     sub.add_parser("draft", help="write email drafts to leads/data/drafts (does NOT send)")
     s = sub.add_parser("status", help="set a lead's status (approved, sent, replied, ...)")
     s.add_argument("id"); s.add_argument("status", choices=store.STATUSES)
+    f = sub.add_parser("find", help="search the web for leads (needs --live and GEMINI_API_KEY)")
+    f.add_argument("kind", choices=store.KINDS); f.add_argument("area")
+    f.add_argument("--live", action="store_true", help="really call Gemini (off by default)")
+    r_ = sub.add_parser("research", help="research one lead more (needs --live)")
+    r_.add_argument("id"); r_.add_argument("--live", action="store_true")
+    k = sub.add_parser("keep", help="OK candidate leads so they can get drafts")
+    k.add_argument("ids", nargs="+")
     sub.add_parser("list", help="show the reply tracker")
     args = ap.parse_args(argv)
 
@@ -25,6 +32,19 @@ def main(argv=None) -> int:
         r = store.add(dict(name=args.name, kind=args.kind, city_state=args.city, website=args.website,
                            email=args.email, phone=args.phone, ships_cars=args.ships, notes=args.notes))
         print(f"Lead {r['id']}: {r['name']}")
+    elif args.cmd == "find":
+        if not args.live:
+            print("Dry run: nothing searched. Add --live when you want it to run."); return 0
+        for r in finder.find(args.kind, args.area):
+            print(f"candidate #{r['id']}: {r['name']} ({r['city_state']}) ships={r['ships_cars']}")
+        print("Look them over, then: python -m leads keep <ids>")
+    elif args.cmd == "research":
+        if not args.live:
+            print("Dry run: nothing searched. Add --live."); return 0
+        r = finder.research(args.id); print(f"#{r['id']} {r['name']}: ships={r['ships_cars']} {r['notes']}")
+    elif args.cmd == "keep":
+        for i in args.ids:
+            r = store.update(i, status="new"); print(f"kept #{r['id']} {r['name']}")
     elif args.cmd == "rank":
         rows = ranking.rank(store.load()); store.save(rows)
         for r in rows:

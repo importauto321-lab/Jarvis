@@ -41,3 +41,30 @@ def test_no_sending_code():
     import pathlib
     src = "".join(p.read_text() for p in pathlib.Path(drafts.__file__).parent.glob("*.py"))
     assert "smtplib" not in src and "send_message" not in src
+
+
+def _fake(text):
+    import io, json as j
+    class R(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+    payload = j.dumps({"candidates": [{"content": {"parts": [{"text": text}]}}]}).encode()
+    return lambda req, timeout=0: R(payload)
+
+
+def test_find_makes_candidates_only_and_drops_no_and_bad_email():
+    from leads import finder
+    text = 'Here: [{"name":"A Auto Transport","city_state":"Dallas, TX","email":"bad","ships_cars":"yes","notes":"Runs trucks."},' \
+           '{"name":"B Lot","ships_cars":"no"}]'
+    added = finder.find("broker", "Texas", key="k", post=_fake(text))
+    assert [a["name"] for a in added] == ["A Auto Transport"]
+    assert added[0]["status"] == "candidate" and added[0]["email"] == ""
+    assert drafts.write_drafts() == []  # candidates get no drafts until kept
+
+
+def test_research_updates_lead():
+    from leads import finder
+    l = store.add(dict(name="X", kind="dealer", city_state="Y", status="candidate"))
+    finder.research(l["id"], key="k", post=_fake('{"ships_cars":"yes","email":"x@y.z","notes":"Ships weekly."}'))
+    r = store.load()[0]
+    assert r["email"] == "x@y.z" and r["ships_cars"] == "yes"

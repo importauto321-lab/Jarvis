@@ -6,8 +6,8 @@ DATA = Path(__file__).parent / "data"
 FIELDS = ["id", "name", "kind", "city_state", "website", "email", "phone",
           "ships_cars", "notes", "score", "status", "last_update"]
 KINDS = ("dealer", "auction", "broker")
-# new -> drafted -> approved -> sent (you mark sent by hand) -> replied / no_reply / not_interested
-STATUSES = ("new", "drafted", "approved", "sent", "replied", "no_reply", "not_interested")
+# candidate (found, waiting for your OK) -> new (kept) -> drafted -> approved -> sent (you mark sent by hand) -> replied / no_reply / not_interested
+STATUSES = ("candidate", "new", "drafted", "approved", "sent", "replied", "no_reply", "not_interested")
 
 
 def path() -> Path:
