@@ -107,7 +107,7 @@ const GEMINI_VOICES = {
   Zubenelgenubi: "Casual", Orus: "Firm", Fenrir: "Lively", Iapetus: "Clear",
 };
 // Kept light: heavy acting directions make the voice sound forced.
-const GEMINI_VOICE_STYLE = "Say this at a brisk, natural conversational pace, like a confident friend talking. Do not drag out or stretch any words or sounds, and do not slow down at the ends of sentences:\n\n";
+const GEMINI_VOICE_STYLE = "Say this in a natural, relaxed, confident way, like a cool friend talking:\n\n";
 let geminiVoiceRestUntil = 0; // after Gemini's free voice limit runs out, use the iPad voice for a while
 const ttsAudio = typeof Audio === "function" ? new Audio() : null;
 if (ttsAudio) { ttsAudio.playsInline = true; ttsAudio.preload = "auto"; }
