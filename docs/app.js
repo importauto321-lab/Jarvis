@@ -107,10 +107,16 @@ const GEMINI_VOICES = {
   Zubenelgenubi: "Casual", Orus: "Firm", Fenrir: "Lively", Iapetus: "Clear",
 };
 // Kept light: heavy acting directions make the voice sound forced.
-const GEMINI_VOICE_STYLE = "Say this in a natural, relaxed, confident way, like a cool friend talking:\n\n";
+const GEMINI_VOICE_STYLE = "Say this at a brisk, natural conversational pace, like a confident friend talking. Do not drag out or stretch any words or sounds, and do not slow down at the ends of sentences:\n\n";
 let geminiVoiceRestUntil = 0; // after Gemini's free voice limit runs out, use the iPad voice for a while
 const ttsAudio = typeof Audio === "function" ? new Audio() : null;
 if (ttsAudio) { ttsAudio.playsInline = true; ttsAudio.preload = "auto"; }
+// Always play at normal speed (a leftover slow setting would stretch his words).
+function normalSpeed() {
+  if (!ttsAudio) return;
+  try { ttsAudio.defaultPlaybackRate = 1; ttsAudio.playbackRate = 1; ttsAudio.preservesPitch = true; } catch {}
+}
+normalSpeed();
 let ttsUnlocked = false;
 let ttsToken = 0;        // changes whenever speech is stopped, so a late answer from Google isn't played
 let ttsFinish = null;    // ends the Gemini speech that's playing
@@ -189,8 +195,16 @@ async function geminiSpeech(text, token) {
   return null;
 }
 
+let lastSpoken = "";      // what Jarvis last said, so his own voice heard by the microphone can be recognised
+let lastSpokenAt = 0;
+function isSpeaking() {
+  return !!ttsFinish || app.dataset.state === "speaking" || !!(synth && (synth.speaking || synth.pending) && !priming);
+}
 function speak(text, then) {
   if (!voiceOn || !text) { then?.(); return; }
+  // The same line asked to play again while it is still playing: ignore the second request.
+  if (text === lastSpoken && Date.now() - lastSpokenAt < 3000 && isSpeaking()) return;
+  lastSpoken = text; lastSpokenAt = Date.now();
   if (useGeminiVoice()) { speakGemini(text, then); return; }
   if (geminiVoiceChosen()) { backupSpeak(text, then); return; }
   speakApple(text, then);
@@ -200,6 +214,9 @@ async function speakGemini(text, then) {
   stopGeminiVoice();
   if (synth && (synth.speaking || synth.pending) && !priming) synth.cancel();
   const token = ttsToken;
+  const micWait = micClosedAt + 800 - Date.now();
+  if (micWait > 0) await new Promise((r) => setTimeout(r, micWait));
+  if (token !== ttsToken) return;
   setState("thinking", "Getting my voice ready");
   const wav = await geminiSpeech(text, token);
   if (token !== ttsToken) return; // stopped while Google was working
@@ -228,6 +245,7 @@ async function speakGemini(text, then) {
   ttsAudio.onerror = () => { if (!done) { finish(false); backupSpeak(text, then); } };
   try {
     ttsAudio.src = url;
+    normalSpeed(); // setting a new file can reset the speed, so set it again right before playing
     await ttsAudio.play();
     if (!done) setState("speaking", "Speaking");
   } catch {
@@ -239,7 +257,7 @@ async function speakGemini(text, then) {
 function speakApple(text, then) {
   if (!voiceOn || !synth || !text) { then?.(); return; }
   if (!session) setAudioMode("playback");
-  const wait = micClosedAt + 350 - Date.now();
+  const wait = micClosedAt + 800 - Date.now();
   if (wait > 0) { setTimeout(() => speakApple(text, then), wait); return; }
   // Safari sometimes never says speech has finished (or started), which would stop hands-free listening for good.
   // So "done" also happens after about as long as the answer takes to say, plus a margin.
@@ -263,6 +281,7 @@ function speakApple(text, then) {
     if ((synth.speaking || synth.pending) && !priming) synth.cancel();
     try { synth.resume(); } catch {}
     const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1; u.pitch = 1; u.volume = 1;
     const voice = chosenVoice();
     if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = "en-US"; }
     u.onstart = () => { started = true; if (!done) setState("speaking", "Speaking"); };
@@ -310,6 +329,7 @@ function endSession(s, { abort = false } = {}) {
   if (session !== s) return;
   session = null;
   micClosedAt = Date.now();
+  setAudioMode("playback");
   clearTimers(s);
   try { abort ? s.rec.abort() : s.rec.stop(); } catch {}
   if (app.dataset.state === "listening") setState(null);
@@ -321,6 +341,7 @@ function stopListening() {
   if (!s) { if (app.dataset.state === "listening") setState(null); return; }
   session = null;
   micClosedAt = Date.now();
+  setAudioMode("playback");
   clearTimers(s);
   if (s.kind === "record") { s.cancelled = true; try { s.mr?.stop(); } catch {} releaseMic(s); }
   else { try { s.rec.abort(); } catch {} }
@@ -328,8 +349,19 @@ function stopListening() {
   if (app.dataset.state === "listening") setState(null);
 }
 
+// Is this just Jarvis's own voice coming back through the microphone? Compare the words with his last answer.
+function echoesJarvis(text) {
+  if (!lastSpoken || Date.now() - lastSpokenAt > 60000) return false;
+  const words = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const heard = words(text), said = new Set(words(lastSpoken));
+  if (heard.length < 3) return false;
+  const matching = heard.filter((w) => said.has(w)).length;
+  return matching / heard.length >= 0.7;
+}
+
 function finishSession(s, { aborted = false } = {}) {
-  const text = (s.finalText || s.heard).trim();
+  let text = (s.finalText || s.heard).trim();
+  if (text && echoesJarvis(text)) text = ""; // he heard himself: ignore it instead of answering himself
   input.value = "";
   if (text) { quietRounds = 0; silentFailures = 0; handle(text); return; }
   if (s.error && MIC_ERRORS[s.error]) {
@@ -348,7 +380,7 @@ function finishSession(s, { aborted = false } = {}) {
   }
   if (!conversing) { $("hint").textContent = "I didn't catch that. Tap the circle and try again."; return; }
   // Heard nothing: listen again a couple of times, then pause so the mic isn't left on.
-  if (++quietRounds <= MAX_QUIET_ROUNDS) setTimeout(() => { if (conversing && !busy && !session) listen(); }, 300);
+  if (++quietRounds <= MAX_QUIET_ROUNDS) setTimeout(() => { if (conversing && !busy && !session && !isSpeaking()) listen(); }, 300);
   else pauseConversation("I stopped listening because it was quiet. Tap the circle to talk again.");
 }
 
@@ -472,6 +504,7 @@ async function listenRecorded() {
       const level = Math.sqrt(sum / buf.length);
       const now = Date.now();
       if (now - t0 < 300) { floor = (floor * samples + level) / ++samples; return; }
+      s.peak = Math.max(s.peak || 0, level);
       if (level > Math.max(0.006, Math.min(floor, 0.01) * 2.5)) { s.spoke = true; lastLoud = now; }
       if (s.spoke && now - lastLoud > SILENCE_AFTER_SPEECH_MS) finishRecording(s);
     }, 100);
@@ -510,8 +543,9 @@ async function recordingStopped(s) {
   s.done = true;
   releaseMic(s);
   if (s.cancelled) return;
-  if (!s.spoke && !s.noMeter) { finishSession(s); return; }
+  if (!s.spoke && !s.noMeter) { $("hint").textContent = `Mic check: no voice detected (loudest sound ${(s.peak || 0).toFixed(3)}). Speak closer to the iPad.`; finishSession(s); return; }
   const blob = new Blob(s.chunks, { type: (s.mr?.mimeType || "audio/mp4").split(";")[0] });
+  $("hint").textContent = `Mic check: recorded ${blob.size} bytes, loudest sound ${(s.peak || 0).toFixed(3)}, ${s.spoke ? "voice detected" : "no voice detected"}.`;
   if (blob.size < 1000) { finishSession(s); return; }
   transcribing = true;
   setState("thinking", "Hearing you");
@@ -522,6 +556,7 @@ async function recordingStopped(s) {
       { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, light: true, moveOnTimeout: true, retryWaits: [1000],
         generationConfig: { thinkingConfig: { thinkingBudget: 0 } } });
     s.heard = /^\W*silence\W*$/i.test(words) ? "" : words.replace(/^["']|["']$/g, "").trim();
+    $("hint").textContent += ` Gemini heard: "${s.heard || "nothing"}".`;
   } catch (err) {
     transcribing = false;
     setState(null);
@@ -1680,8 +1715,16 @@ async function askClaude(question) {
 let busy = false;
 
 function afterReply() {
-  // A short pause lets the iPad switch its audio from the speaker back to the microphone.
-  if (conversing && handsFree && (Recognition || hearWithGemini())) setTimeout(() => { if (conversing && !busy) listen(); }, 400);
+  if (!(conversing && handsFree && (Recognition || hearWithGemini()))) return;
+  // Wait until he has fully stopped talking, then a little longer so the last of his voice dies away
+  // and the iPad switches its audio from the speaker back to the microphone.
+  let waited = 0;
+  const check = () => {
+    if (!conversing || busy) return;
+    if (isSpeaking() && waited < 10000) { waited += 250; setTimeout(check, 250); return; }
+    setTimeout(() => { if (conversing && !busy && !isSpeaking()) listen(); }, 900);
+  };
+  check();
 }
 
 async function handle(raw, { tapped = false } = {}) {
