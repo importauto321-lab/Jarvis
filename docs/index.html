@@ -11,9 +11,9 @@
 <meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
 <title>Jarvis</title>
-<link rel="stylesheet" href="app.css?v=17">
-<script src="boot.js?v=17"></script>
-<script type="module" src="app.js?v=17"></script>
+<link rel="stylesheet" href="app.css?v=18">
+<script src="boot.js?v=18"></script>
+<script type="module" src="app.js?v=18"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -48,6 +48,13 @@
       <button class="toggle" id="newChat" type="button">New conversation</button>
     </div>
     <hr>
+    <h2>Memory</h2>
+    <p id="memoryStatus"></p>
+    <ul class="memory" id="memoryList"></ul>
+    <div class="row">
+      <button class="toggle" id="forgetAll" type="button">Forget everything</button>
+    </div>
+    <hr>
     <h2>YouTube videos</h2>
     <p>A Google Gemini API key lets Jarvis watch a YouTube video you paste a link to, then summarize it or answer questions about it. It's saved only in this browser on this device. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.</p>
     <p id="geminiStatus"></p>
@@ -75,7 +82,7 @@
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
     <p>Removes your Anthropic key, Gemini key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 17 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Page version 18 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">
