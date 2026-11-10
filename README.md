@@ -34,6 +34,12 @@ this video?". Claude passes the link to Gemini, which watches the picture and
 sound, and Claude answers from that. The video must be public; very long videos
 may hit Gemini's limits. You still need the Anthropic key too.
 
+With a Gemini key saved, the circle also uses Gemini to hear you: it records
+until you stop talking, and Gemini writes down what you said. On iPad this is
+much more reliable than Safari's own speech recognition, which often stops
+hearing after the first question. Turn off **Use Gemini to hear me** in
+Settings to go back to Safari's listening; then your voice isn't sent to Google.
+
 Tap the circle once to start a conversation: after each answer Jarvis starts
 listening again by itself, so there's nothing to press. Tap the circle (or say
 "stop listening") to pause; it also pauses after a few quiet turns. Pick a

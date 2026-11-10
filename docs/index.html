@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- Only Anthropic and Google (including Gemini, for YouTube videos) can be reached; nothing else may load or run. -->
+<!-- Only Anthropic and Google (including Gemini, for YouTube videos and hearing you) can be reached; nothing else may load or run. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src https://api.anthropic.com https://generativelanguage.googleapis.com https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -11,9 +11,9 @@
 <meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
 <title>Jarvis</title>
-<link rel="stylesheet" href="app.css?v=15">
-<script src="boot.js?v=15"></script>
-<script type="module" src="app.js?v=15"></script>
+<link rel="stylesheet" href="app.css?v=16">
+<script src="boot.js?v=16"></script>
+<script type="module" src="app.js?v=16"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -56,6 +56,7 @@
       <button class="send" id="saveGemini" type="button">Save key</button>
       <button class="toggle" id="clearGemini" type="button">Remove key</button>
     </div>
+    <label class="check"><input id="geminiHearing" type="checkbox"> Use Gemini to hear me when I tap the circle. Much more reliable on iPad than Safari's own listening. Your voice recordings are sent to Google to be written down.</label>
     <hr>
     <h2>Gmail and Calendar</h2>
     <p id="googleStatus">Not connected. Paste your Google OAuth client ID, then tap Connect Google. <a href="https://github.com/importauto321-lab/Jarvis#gmail-and-calendar-setup" target="_blank" rel="noopener">Setup steps</a></p>
@@ -74,7 +75,7 @@
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
     <p>Removes your Anthropic key, Gemini key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 15 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Page version 16 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">
