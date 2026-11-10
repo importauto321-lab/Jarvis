@@ -106,8 +106,6 @@ const GEMINI_VOICES = {
   Algieba: "Smooth", Umbriel: "Easy-going", Charon: "Deep and steady", Algenib: "Gravelly",
   Zubenelgenubi: "Casual", Orus: "Firm", Fenrir: "Lively", Iapetus: "Clear",
 };
-// Kept light: heavy acting directions make the voice sound forced.
-const GEMINI_VOICE_STYLE = "Say this in a natural, relaxed, confident way, like a cool friend talking:\n\n";
 let geminiVoiceRestUntil = 0; // after Gemini's free voice limit runs out, use the iPad voice for a while
 const ttsAudio = typeof Audio === "function" ? new Audio() : null;
 if (ttsAudio) { ttsAudio.playsInline = true; ttsAudio.preload = "auto"; }
@@ -174,7 +172,7 @@ async function geminiSpeech(text, token) {
       const res = await fetch(geminiUrl(model), {
         method: "POST", signal: controller.signal,
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify({ contents: [{ parts: [{ text: GEMINI_VOICE_STYLE + text }] }],
+        body: JSON.stringify({ contents: [{ parts: [{ text }] }],
           generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } } } }),
       });
       // Each speech model has its own free limit, so a used-up one moves on to the next before giving up.
