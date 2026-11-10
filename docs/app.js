@@ -239,6 +239,8 @@ let transcribing = false;
 const SILENCE_AFTER_SPEECH_MS = 1300; // quiet this long after you've spoken: you've finished
 const MAX_RECORD_MS = 30000;
 const NO_METER_RECORD_MS = 7000;      // if loudness can't be measured, record this long and let Gemini decide
+// Writing down a few seconds of speech is a quick job: the light model goes first, with thinking turned off.
+const HEARING_MODELS = ["gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-flash-latest"];
 const TRANSCRIBE_PROMPT = "Transcribe exactly what the person says in this recording, in the language they speak. " +
   "Reply with only their words: no quotes, labels, timestamps or comments. If nobody speaks, reply with exactly: [silence]";
 
@@ -335,7 +337,8 @@ async function recordingStopped(s) {
     const audio = await toWav(blob).catch(() => blob);
     const words = await geminiGenerate(
       [{ inline_data: { mime_type: audio.type || "audio/mp4", data: await toBase64(audio) } }, { text: TRANSCRIBE_PROMPT }],
-      { timeoutMs: 30000, workingLabel: "Hearing you" });
+      { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, moveOnTimeout: true,
+        generationConfig: { thinkingConfig: { thinkingBudget: 0 } } });
     s.heard = /^\W*silence\W*$/i.test(words) ? "" : words.replace(/^["']|["']$/g, "").trim();
   } catch (err) {
     transcribing = false;
@@ -818,8 +821,8 @@ class GeminiError extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
 }
 
-// One request to one model. Returns { text } on success, or { status, why, wait } on failure.
-async function geminiOnce(model, key, parts, timeoutMs) {
+// One request to one model. Returns { text } on success, or { status, why, wait, timedOut } on failure.
+async function geminiOnce(model, key, parts, timeoutMs, generationConfig) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
@@ -827,11 +830,12 @@ async function geminiOnce(model, key, parts, timeoutMs) {
     res = await fetch(geminiUrl(model), {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ contents: [{ parts }] }),
+      body: JSON.stringify({ contents: [{ parts }], ...(generationConfig ? { generationConfig } : {}) }),
       signal: controller.signal,
     });
   } catch (err) {
-    throw err.name === "AbortError" ? new GeminiError("timeout", "Gemini took too long.") : new GeminiError("network", "Couldn't reach Gemini.");
+    if (err.name === "AbortError") return { status: 504, why: "Gemini took too long.", timedOut: true };
+    throw new GeminiError("network", "Couldn't reach Gemini.");
   } finally { clearTimeout(timer); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -843,13 +847,25 @@ async function geminiOnce(model, key, parts, timeoutMs) {
 }
 
 // Busy (overloaded or briefly rate limited) is retried, then the next free model is tried.
-async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Thinking" } = {}) {
+// moveOnTimeout: a slow answer counts as busy and the next model is tried (for short jobs like hearing you);
+// otherwise a timeout ends the request (a long video can't be retried quickly).
+async function geminiGenerate(parts, { timeoutMs = 150000, workingLabel = "Thinking", models = GEMINI_MODELS,
+  generationConfig = null, moveOnTimeout = false } = {}) {
   const key = store.get("geminiKey");
   if (!key) throw new GeminiError("key", "No Gemini key is saved.");
   let last = null;
-  for (const model of GEMINI_MODELS) {
+  for (const model of models) {
+    let config = generationConfig;
     for (let attempt = 0; ; attempt++) {
-      const out = await geminiOnce(model, key, parts, timeoutMs);
+      const out = await geminiOnce(model, key, parts, timeoutMs, config);
+      if (out.timedOut) {
+        if (!moveOnTimeout) throw new GeminiError("timeout", out.why);
+        last = out;
+        setState("thinking", "Gemini is slow, trying another model");
+        break;
+      }
+      // A model that doesn't accept the speed settings gets the request without them.
+      if (out.status === 400 && config && /thinking|generation_?config/i.test(out.why)) { config = null; attempt--; continue; }
       if (out.text !== undefined) {
         if (!out.text) throw new GeminiError("empty", "Gemini didn't say anything.");
         return out.text;
