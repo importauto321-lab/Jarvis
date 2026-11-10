@@ -51,6 +51,8 @@ Read this first in every new session. It sums up earlier sessions so the user do
 
 ## Plans the user liked (not built yet)
 
+The full plan the user agreed on is in `PLAN.md`. Show it to them when they ask about "the big plan".
+
 1. Morning briefing: email, calendar and urgent items, every day (likely needs Anthropic Managed Agents scheduled deployments).
 2. Move Jarvis's brain to Managed Agents, so it works when the iPad is off; the iPad page becomes the voice and screen.
 3. Business tools: loads in the TMS, customer follow-ups, invoices.
