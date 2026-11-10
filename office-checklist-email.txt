@@ -1,0 +1,53 @@
+Subject: Business agent setup - please fill in and reply
+
+Hi team,
+
+We're setting up a helper that drafts emails, quotes, invoice reminders and more.
+It only DRAFTS. Nothing is sent without my OK.
+
+Please fill in the blanks below and reply to this email.
+IMPORTANT: Do NOT put passwords, keys or card numbers in your reply.
+Just write "yes" or "no" where it asks if we have a login.
+
+1. COMPUTERS (Mac mini and iMac)
+   Python and Chrome installed?  Mac mini: ____   iMac: ____
+
+2. LOGINS (yes/no only, no passwords)
+   Gmail (Import Auto Solutions 2): ____
+   Super Dispatch: ____
+   Central Dispatch: ____
+   TMS: ____
+   Who owns each login (name): ______________________
+
+3. BUSINESS DETAILS FOR EMAILS AND LETTERS
+   Business name (still open: ideas from Nicole and Kaysha): ______________________
+   Name to sign emails: ______________________
+   Real business address (street, city, state, ZIP): ______________________
+   Reply email: ______________________
+   Phone: ______________________
+   Service area (states or lanes): ______________________
+   Rate per mile: ______________________
+   Any minimum charge or extra fees (open carrier, enclosed, inoperable): ______________________
+
+4. OPENAI CHECKER (second opinion)
+   Account created at platform.openai.com: ____
+   $5 credit bought: ____   Auto-recharge OFF: ____   Monthly limit set to $5: ____
+   (Do not email the key.)
+
+5. LOAD BOARD TERMS
+   Link to Super Dispatch terms checked: ____   Does it allow automation? ____
+   Link to Central Dispatch terms checked: ____   Does it allow automation? ____
+
+6. INVOICES
+   Where are invoices kept? (TMS / spreadsheet / email): ______________________
+   Can we export them as a CSV or Excel file? ____
+   Standard payment due days (for example Net 15): ____
+   Days past due before a polite reminder: ____
+   Days past due before a demand letter: ____
+
+7. REVIEW AND ATTORNEY
+   Google review link: ______________________
+   Attorney friend's name and email (to approve every demand letter): ______________________
+   Who sees urgent emails first (Nicole / Kaysha): ______________________
+
+Thanks!
