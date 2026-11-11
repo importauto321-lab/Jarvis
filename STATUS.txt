@@ -1,0 +1,39 @@
+BUSINESS AGENT STATUS (draft-only: nothing sends, pays, books or posts without the owner's OK)
+
+1. FINISHED AND WORKING (tested with pretend data only)
+   - Lead list, ranking, draft emails (business address + unsubscribe line), reply tracker
+   - Quote helper (miles x rate per mile, minimum charge)
+   - Invoice reminders, demand letters, review requests (drafts only; demand letters marked "not yet approved by the attorney")
+   - Inbox sorter (suggests an order, moves nothing)
+   - Load matcher and truck suggestion (works on loads pasted in from a CSV)
+   - Setup guide: leads/SETUP.md. Office checklist email.
+
+2. BUILT BUT NOT TURNED ON
+   - Lead finder/researcher (Gemini): runs only with --live and a free Gemini key
+   - Quote miles lookup: runs only with --live
+   - Load boards (Super Dispatch, Central Dispatch): OFF. No login or scraping code
+   - Sending: none exists. A person sends every email
+   - Settings file still has placeholders (name, address, rate, routes)
+
+3. LEFT TO BUILD
+   - Day 6: ChatGPT checker (second opinion) and final home checklist
+   - Later, only if the boards allow it: real load board connections
+   - Later, optional: read Gmail directly for the inbox sorter (today: export a file)
+   - Not part of this build: always-on boss (Managed Agents), morning briefing, voice calls
+
+4. STILL NEEDED
+   Anywhere: business name (Nicole and Kaysha), rate, routes, truck size,
+             sample invoice and load exports, Google review link
+   At the house: Python and Chrome on Mac mini and iMac; free Gemini key;
+                 OpenAI account ($5, auto-recharge OFF); logins for Gmail, both
+                 load boards and the TMS; fill in the settings file; check each
+                 board's terms; first test run
+
+5. WEEKLY LIMIT
+   Estimate only: Days 1-5 used about 25-40% of a week. Check the real number in Claude settings.
+
+NOT SURE ABOUT
+   - Usage numbers (estimates)
+   - Whether the load boards allow automation
+   - How good real lead results will be
+   - Everything was tested with pretend data; expect small fixes on the first real run

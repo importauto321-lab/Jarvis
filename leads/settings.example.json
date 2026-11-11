@@ -1,0 +1,31 @@
+{
+  "business_name": "FILL IN LATER (ask Kaysha and Nicole)",
+  "your_name": "FILL IN",
+  "business_address": "FILL IN: real street address, city, state, ZIP",
+  "reply_email": "FILL IN",
+  "phone": "FILL IN",
+  "one_line_pitch": "We haul cars safely and on time between dealers, auctions and buyers.",
+  "service_area": "FILL IN (states or lanes you cover)",
+  "rate_per_mile": "FILL IN (dollars, for example 0.85)",
+  "minimum_charge": "FILL IN (dollars, or 0)",
+  "reminder_days_late": "FILL IN (for example 7)",
+  "demand_days_late": "FILL IN (for example 30)",
+  "payment_deadline_days": "FILL IN (days a demand letter gives them, for example 10)",
+  "google_review_link": "FILL IN",
+  "inbox_owners": {
+    "Nicole": [
+      "FILL IN words, for example invoice, payment"
+    ],
+    "Kaysha": [
+      "FILL IN words, for example pickup, delivery"
+    ]
+  },
+  "routes": [
+    {
+      "from": "FILL IN (state or city, e.g. TX)",
+      "to": "FILL IN (e.g. FL)"
+    }
+  ],
+  "min_per_mile": "FILL IN (lowest $/mile you'll accept, e.g. 0.70)",
+  "load_boards_allowed": false
+}

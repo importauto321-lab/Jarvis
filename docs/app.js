@@ -130,17 +130,21 @@ function backupSpeak(text, then) {
   setTimeout(() => then?.(), 600);
 }
 
-// Gemini's voice is fairly quiet. Scale it so the loudest moment is just under full volume (at most 4 times
-// louder), which is louder without distorting, whatever the iPad's volume is set to.
+// Gemini's voice is fairly quiet. Raise its average loudness (up to 10 times) and round off any peaks that would
+// go past full volume (a soft limiter), which is louder without distortion, whatever the iPad's volume is set to.
 function louder(pcm) {
   const total = pcm.length >> 1;
   const view = new DataView(pcm.buffer, pcm.byteOffset, total * 2);
-  let peak = 0;
-  for (let i = 0; i < total; i++) peak = Math.max(peak, Math.abs(view.getInt16(i * 2, true)));
-  if (!peak) return pcm;
-  const gain = Math.min(4, (0.95 * 32767) / peak);
+  let sum = 0;
+  for (let i = 0; i < total; i++) { const v = view.getInt16(i * 2, true) / 32768; sum += v * v; }
+  const rms = Math.sqrt(sum / (total || 1));
+  if (!rms) return pcm;
+  const gain = Math.min(10, 0.2 / rms);
   if (gain <= 1.05) return pcm;
-  for (let i = 0; i < total; i++) view.setInt16(i * 2, Math.round(view.getInt16(i * 2, true) * gain), true);
+  for (let i = 0; i < total; i++) {
+    const v = (view.getInt16(i * 2, true) / 32768) * gain;
+    view.setInt16(i * 2, Math.round(Math.tanh(v) * 0.98 * 32767), true);
+  }
   return pcm;
 }
 
