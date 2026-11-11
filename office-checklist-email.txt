@@ -45,9 +45,8 @@ Just write "yes" or "no" where it asks if we have a login.
    Days past due before a polite reminder: ____
    Days past due before a demand letter: ____
 
-7. REVIEW AND ATTORNEY
+7. REVIEWS AND URGENT EMAIL
    Google review link: ______________________
-   Attorney friend's name and email (to approve every demand letter): ______________________
    Who sees urgent emails first (Nicole / Kaysha): ______________________
 
 Thanks!

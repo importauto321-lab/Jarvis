@@ -65,7 +65,7 @@ def reminder(r, s, late) -> str:
 
 def demand(r, s, late, today) -> str:
     deadline = today + timedelta(days=int(s["payment_deadline_days"]))
-    return (f"*** DRAFT. NOT SENT. NOT YET APPROVED BY {s['attorney_name']} ***\n"
+    return (f"*** DRAFT. NOT SENT. NOT YET APPROVED BY THE ATTORNEY ***\n"
             f"To: {r['email'] or '(no email on file)'}\nSubject: Payment demand: invoice {r['invoice']}\n\n"
             f"{r['customer']},\n\nOur records show invoice {r['invoice']} for load {r['load']}, "
             f"in the amount of ${float(r['amount']):,.2f}, was due on {r['due_date']} and remains unpaid "
@@ -86,7 +86,7 @@ def run(kind: str, today: date | None = None) -> list[Path]:
     """kind: chase | demand | review. Writes drafts, marks the invoice so it is never drafted twice."""
     today = today or date.today()
     need = ["your_name", "business_name", "business_address", "phone", "reply_email"]
-    need += {"chase": ["reminder_days_late"], "demand": ["demand_days_late", "payment_deadline_days", "attorney_name"],
+    need += {"chase": ["reminder_days_late"], "demand": ["demand_days_late", "payment_deadline_days"],
              "review": ["google_review_link"]}[kind]
     s = drafts.load_settings(need)
     rows, out = load(), []

@@ -71,8 +71,7 @@ def test_research_updates_lead():
 
 
 FULL = {**SETTINGS, "rate_per_mile": "0.85", "minimum_charge": "300", "reminder_days_late": "7",
-        "demand_days_late": "30", "payment_deadline_days": "10", "google_review_link": "https://g.page/r/x",
-        "attorney_name": "Pat"}
+        "demand_days_late": "30", "payment_deadline_days": "10", "google_review_link": "https://g.page/r/x"}
 
 
 def _inv(tmp_path, monkeypatch, rows):
@@ -104,7 +103,7 @@ def test_chase_demand_review(tmp_path, monkeypatch):
     dem = inv.run("demand", t)            # Ann only
     assert len(dem) == 1
     txt = dem[0].read_text()
-    assert "NOT YET APPROVED BY Pat" in txt and "L1" in txt and "$500.00" in txt and "November 20, 2026" in txt
+    assert "NOT YET APPROVED BY THE ATTORNEY" in txt and "L1" in txt and "$500.00" in txt and "November 20, 2026" in txt
     rev = inv.run("review", t)            # Cy only
     assert len(rev) == 1 and "g.page" in rev[0].read_text()
 

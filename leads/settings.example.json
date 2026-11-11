@@ -12,7 +12,6 @@
   "demand_days_late": "FILL IN (for example 30)",
   "payment_deadline_days": "FILL IN (days a demand letter gives them, for example 10)",
   "google_review_link": "FILL IN",
-  "attorney_name": "FILL IN",
   "inbox_owners": {
     "Nicole": [
       "FILL IN words, for example invoice, payment"
