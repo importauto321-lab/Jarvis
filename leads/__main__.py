@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-from . import drafts, finder, invoices, quotes, ranking, store
+from . import drafts, finder, inbox, invoices, quotes, ranking, store
 
 
 def main(argv=None) -> int:
@@ -32,6 +32,8 @@ def main(argv=None) -> int:
     ii = sub.add_parser("invoices", help="import | unpaid | chase | demand | review")
     ii.add_argument("action", choices=["import", "unpaid", "chase", "demand", "review"])
     ii.add_argument("file", nargs="?")
+    ib = sub.add_parser("inbox", help="suggest an order for an exported mailbox (.mbox, folder of .eml, or .json)")
+    ib.add_argument("file"); ib.add_argument("--out", help="also save the report to this file")
     sub.add_parser("list", help="show the reply tracker")
     args = ap.parse_args(argv)
 
@@ -70,6 +72,15 @@ def main(argv=None) -> int:
             made = invoices.run(args.action)
             print(f"{len(made)} drafts written. Nothing is sent." + (" Attorney must approve demand letters." if args.action == "demand" else ""))
             for p in made: print(" ", p)
+    elif args.cmd == "inbox":
+        import json as _j
+        owners = {}
+        if drafts.SETTINGS.exists():
+            owners = _j.loads(drafts.SETTINGS.read_text(encoding="utf-8")).get("inbox_owners", {})
+        text = inbox.report(inbox.sort_messages(inbox.load_messages(args.file), owners))
+        print(text)
+        if args.out:
+            open(args.out, "w", encoding="utf-8").write(text)
     elif args.cmd == "rank":
         rows = ranking.rank(store.load()); store.save(rows)
         for r in rows:

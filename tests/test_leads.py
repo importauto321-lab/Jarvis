@@ -113,3 +113,24 @@ def test_no_sending_code_in_invoices():
     import pathlib
     src = "".join(p.read_text() for p in pathlib.Path(drafts.__file__).parent.glob("*.py"))
     assert "smtplib" not in src and "sendmail" not in src
+
+
+def test_inbox_sorts_urgent_first_and_flags_junk(tmp_path):
+    from leads import inbox
+    store.add(dict(name="Big", kind="broker", city_state="X", email="ann@big.com"))
+    msgs = [
+        {"from": "news@shop.com", "subject": "50% off sale ends", "body": "unsubscribe here", "date": ""},
+        {"from": "ann@big.com", "subject": "URGENT: car damaged at delivery", "body": "claim", "date": ""},
+        {"from": "bob@x.com", "subject": "Quote for a Civic?", "body": "how much", "date": ""},
+    ]
+    out = inbox.sort_messages(msgs, owners={"Nicole": ["claim"]})
+    assert out[0]["tier"] == "URGENT" and out[0]["owner"] == "Nicole"
+    assert out[-1]["tier"] == "JUNK?"
+    assert "nothing was moved" in inbox.report(out)
+
+
+def test_inbox_reads_json_file(tmp_path):
+    from leads import inbox
+    f = tmp_path / "m.json"
+    f.write_text(json.dumps([{"from": "a@b.c", "subject": "hi", "body": "", "date": ""}]))
+    assert len(inbox.load_messages(str(f))) == 1
