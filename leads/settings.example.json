@@ -20,5 +20,13 @@
     "Kaysha": [
       "FILL IN words, for example pickup, delivery"
     ]
-  }
+  },
+  "routes": [
+    {
+      "from": "FILL IN (state or city, e.g. TX)",
+      "to": "FILL IN (e.g. FL)"
+    }
+  ],
+  "min_per_mile": "FILL IN (lowest $/mile you'll accept, e.g. 0.70)",
+  "load_boards_allowed": false
 }

@@ -134,3 +134,24 @@ def test_inbox_reads_json_file(tmp_path):
     f = tmp_path / "m.json"
     f.write_text(json.dumps([{"from": "a@b.c", "subject": "hi", "body": "", "date": ""}]))
     assert len(inbox.load_messages(str(f))) == 1
+
+
+def test_load_match_and_truck(tmp_path):
+    from leads import loads
+    L = [
+        dict(id="1", source="SD", pickup="Dallas, TX", dropoff="Miami, FL", miles="1300", price="1300", vehicle="Civic", pickup_date="2026-11-12"),
+        dict(id="2", source="CD", pickup="Orlando, FL", dropoff="Houston, TX", miles="1000", price="600", vehicle="F150", pickup_date="2026-11-13"),
+        dict(id="3", source="SD", pickup="Seattle, WA", dropoff="Boise, ID", miles="500", price="900", vehicle="Mini", pickup_date="2026-11-12"),
+        dict(id="4", source="SD", pickup="Austin, TX", dropoff="Tampa, FL", miles="1200", price="1500", vehicle="Tesla", pickup_date="2026-11-30"),
+    ]
+    found = loads.match(L, [{"from": "TX", "to": "FL"}], min_per_mile=0.7)
+    assert [l["id"] for l in found] == ["4", "1"]  # 2 is below $0.70/mi (0.60); 3 off route
+    plan = loads.build_truck(found, capacity=9, window_days=5)
+    assert [l["id"] for l in plan] == ["4"]  # 1 is 18 days from the best load
+    assert "No loads" in loads.summary([])
+
+
+def test_boards_off_by_default():
+    from leads import boards
+    with pytest.raises(SystemExit):
+        boards.search("Super Dispatch", [])

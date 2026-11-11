@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-from . import drafts, finder, inbox, invoices, quotes, ranking, store
+from . import drafts, finder, inbox, invoices, loads, quotes, ranking, store
 
 
 def main(argv=None) -> int:
@@ -34,6 +34,8 @@ def main(argv=None) -> int:
     ii.add_argument("file", nargs="?")
     ib = sub.add_parser("inbox", help="suggest an order for an exported mailbox (.mbox, folder of .eml, or .json)")
     ib.add_argument("file"); ib.add_argument("--out", help="also save the report to this file")
+    lo = sub.add_parser("loads", help="match a loads CSV to your routes and suggest a truck load")
+    lo.add_argument("file"); lo.add_argument("--capacity", type=int, default=9)
     sub.add_parser("list", help="show the reply tracker")
     args = ap.parse_args(argv)
 
@@ -81,6 +83,19 @@ def main(argv=None) -> int:
         print(text)
         if args.out:
             open(args.out, "w", encoding="utf-8").write(text)
+    elif args.cmd == "loads":
+        import json as _j
+        st = _j.loads(drafts.SETTINGS.read_text(encoding="utf-8")) if drafts.SETTINGS.exists() else {}
+        routes = st.get("routes", [])
+        if not routes or any("FILL IN" in str(v) for r in routes for v in r.values()):
+            raise SystemExit("Fill in 'routes' in settings.json first.")
+        floor = float(st.get("min_per_mile") or 0) if "FILL IN" not in str(st.get("min_per_mile", "")) else 0.0
+        found = loads.match(loads.load_csv(args.file), routes, floor)
+        print(f"{len(found)} loads fit your routes:")
+        for l in found:
+            print(f"  {l['id']} ({l['source']}) {l['pickup']} -> {l['dropoff']} {l['vehicle']} ${float(l['price']):,.0f} ${l['per_mile']}/mi")
+        print("\nSuggested truck (a person checks it; nothing is booked):")
+        print(loads.summary(loads.build_truck(found, args.capacity)))
     elif args.cmd == "rank":
         rows = ranking.rank(store.load()); store.save(rows)
         for r in rows:
