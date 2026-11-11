@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-from . import drafts, finder, ranking, store
+from . import drafts, finder, invoices, quotes, ranking, store
 
 
 def main(argv=None) -> int:
@@ -25,6 +25,13 @@ def main(argv=None) -> int:
     r_.add_argument("id"); r_.add_argument("--live", action="store_true")
     k = sub.add_parser("keep", help="OK candidate leads so they can get drafts")
     k.add_argument("ids", nargs="+")
+    q = sub.add_parser("quote", help="quote = miles x your rate per mile")
+    q.add_argument("pickup"); q.add_argument("dropoff"); q.add_argument("car")
+    q.add_argument("--miles", type=float, help="miles, if you know them")
+    q.add_argument("--live", action="store_true", help="look up miles on the free OpenStreetMap map")
+    ii = sub.add_parser("invoices", help="import | unpaid | chase | demand | review")
+    ii.add_argument("action", choices=["import", "unpaid", "chase", "demand", "review"])
+    ii.add_argument("file", nargs="?")
     sub.add_parser("list", help="show the reply tracker")
     args = ap.parse_args(argv)
 
@@ -45,6 +52,24 @@ def main(argv=None) -> int:
     elif args.cmd == "keep":
         for i in args.ids:
             r = store.update(i, status="new"); print(f"kept #{r['id']} {r['name']}")
+    elif args.cmd == "quote":
+        st = drafts.load_settings(["rate_per_mile", "minimum_charge"])
+        miles = args.miles
+        if miles is None:
+            if not args.live:
+                print("Give --miles N, or add --live to look the miles up."); return 0
+            miles = quotes.road_miles(args.pickup, args.dropoff)
+        print(quotes.quote(miles, args.car, st)["text"], f"({args.pickup} to {args.dropoff})")
+        print("This is a suggestion. Check it before you send it.")
+    elif args.cmd == "invoices":
+        if args.action == "import":
+            print(f"{invoices.import_csv(args.file)} invoices imported.")
+        elif args.action == "unpaid":
+            print("\n".join(invoices.unpaid_report()) or "No late invoices.")
+        else:
+            made = invoices.run(args.action)
+            print(f"{len(made)} drafts written. Nothing is sent." + (" Attorney must approve demand letters." if args.action == "demand" else ""))
+            for p in made: print(" ", p)
     elif args.cmd == "rank":
         rows = ranking.rank(store.load()); store.save(rows)
         for r in rows:

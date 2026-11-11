@@ -68,3 +68,48 @@ def test_research_updates_lead():
     finder.research(l["id"], key="k", post=_fake('{"ships_cars":"yes","email":"x@y.z","notes":"Ships weekly."}'))
     r = store.load()[0]
     assert r["email"] == "x@y.z" and r["ships_cars"] == "yes"
+
+
+FULL = {**SETTINGS, "rate_per_mile": "0.85", "minimum_charge": "300", "reminder_days_late": "7",
+        "demand_days_late": "30", "payment_deadline_days": "10", "google_review_link": "https://g.page/r/x",
+        "attorney_name": "Pat"}
+
+
+def _inv(tmp_path, monkeypatch, rows):
+    from leads import invoices
+    sp = tmp_path / "settings.json"; sp.write_text(json.dumps(FULL))
+    monkeypatch.setattr(drafts, "SETTINGS", sp)
+    f = tmp_path / "in.csv"
+    f.write_text("invoice,customer,email,load,amount,due_date,paid_date\n" + "\n".join(rows))
+    invoices.import_csv(str(f))
+    return invoices
+
+
+def test_quote_math_and_minimum():
+    from leads import quotes
+    assert quotes.quote(1000, "Civic", FULL)["price"] == 850.0
+    assert quotes.quote(100, "Civic", FULL)["price"] == 300.0
+
+
+def test_chase_demand_review(tmp_path, monkeypatch):
+    from datetime import date
+    inv = _inv(tmp_path, monkeypatch, [
+        "1,Ann,a@x.c,L1,500,2026-10-01,",      # 40 days late
+        "2,Bob,b@x.c,L2,400,2026-11-01,",      # 9 days late
+        "3,Cy,c@x.c,L3,300,2026-10-01,2026-10-05"])  # paid
+    t = date(2026, 11, 10)
+    chase = inv.run("chase", t)           # Ann (40) and Bob (9) both past 7 days
+    assert len(chase) == 2
+    assert inv.run("chase", t) == []      # never drafted twice
+    dem = inv.run("demand", t)            # Ann only
+    assert len(dem) == 1
+    txt = dem[0].read_text()
+    assert "NOT YET APPROVED BY Pat" in txt and "L1" in txt and "$500.00" in txt and "November 20, 2026" in txt
+    rev = inv.run("review", t)            # Cy only
+    assert len(rev) == 1 and "g.page" in rev[0].read_text()
+
+
+def test_no_sending_code_in_invoices():
+    import pathlib
+    src = "".join(p.read_text() for p in pathlib.Path(drafts.__file__).parent.glob("*.py"))
+    assert "smtplib" not in src and "sendmail" not in src

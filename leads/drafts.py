@@ -9,11 +9,11 @@ DRAFTS = store.DATA / "drafts"
 PLACEHOLDER = "FILL IN"
 
 
-def load_settings() -> dict:
+def load_settings(need=None) -> dict:
     if not SETTINGS.exists():
         raise SystemExit("Missing leads/settings.json. Copy settings.example.json to settings.json and fill it in.")
     s = json.loads(SETTINGS.read_text(encoding="utf-8"))
-    missing = [k for k, v in s.items() if PLACEHOLDER in str(v)]
+    missing = [k for k, v in s.items() if PLACEHOLDER in str(v) and (need is None or k in need)]
     if missing:
         raise SystemExit("Fill in these settings first: " + ", ".join(missing))
     return s
