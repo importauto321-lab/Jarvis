@@ -1,0 +1,14 @@
+{
+  "sample": true,
+  "bookings": [
+    {"customer": "Big Brokers", "route": "Dallas TX to Miami FL", "car": "2019 Civic", "price": 1100},
+    {"customer": "Waco Auto", "route": "Waco TX to Tampa FL", "car": "2021 F150", "price": 1250}
+  ],
+  "loads": [
+    {"id": "L1", "status": "picked up", "route": "Dallas TX to Miami FL"},
+    {"id": "L2", "status": "pickup tomorrow", "route": "Austin TX to Tampa FL"}
+  ],
+  "emails": [
+    {"from": "ann@bigbrokers.test", "subject": "URGENT: car damaged at delivery", "body": "claim", "date": ""}
+  ]
+}

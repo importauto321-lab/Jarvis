@@ -50,6 +50,12 @@ Read this first in every new session. It sums up earlier sessions so the user do
 - Safari caches hard: scripts are linked with `?v=N`. **Bump "Page version N" and every `?v=N` in `docs/index.html` on each web change**,
   so the user can confirm they have the new version.
 
+## Spending freeze (Nov 19)
+
+The user said: spend no money right now; get everything ready, then connect it at the house. Do not buy or start paid things
+(OpenAI credit, Twilio/Retell, paid plans). Free first. Everything stays draft-only. The Jarvis page's briefing uses a small
+amount of Anthropic API credit per use; the Python briefing (`python -m boss daily`) costs nothing.
+
 ## How we work
 
 - One branch per change, from the latest `origin/main`; open a PR and merge it (the user has asked for changes to go live).

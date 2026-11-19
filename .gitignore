@@ -27,3 +27,8 @@ secrets/
 Thumbs.db
 .vscode/
 .idea/
+
+leads/settings.json
+leads/data/
+boss/data/
+life/data/
