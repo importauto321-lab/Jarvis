@@ -1,0 +1,23 @@
+{
+  "sample": true,
+  "calendar": [
+    {"time": "9:00 AM", "title": "Call with Nicole: open loads"},
+    {"time": "1:30 PM", "title": "Pickup window: 2 cars, Dallas TX"},
+    {"time": "4:00 PM", "title": "Deadline: send Friday quotes"}
+  ],
+  "emails": [
+    {"from": "ann@bigbrokers.test", "subject": "URGENT: car damaged at delivery", "body": "Customer is filing a claim.", "date": ""},
+    {"from": "bob@dealer.test", "subject": "Quote for a Civic to Miami?", "body": "How much and how soon?", "date": ""},
+    {"from": "news@shop.test", "subject": "50% off sale ends", "body": "unsubscribe here", "date": ""}
+  ],
+  "ideas": [
+    "Online dispatching class: record one 10-minute lesson on quoting a load and post a clip on Instagram.",
+    "Offer past dealer customers a repeat-lane discount for 3 loads a month.",
+    "Post a before-and-after delivery video for a happy customer (with their OK)."
+  ],
+  "watch": [
+    "Two invoices are close to the 30-day mark. Decide if a demand letter goes to the attorney.",
+    "Weekend pickups: confirm drivers by Thursday."
+  ],
+  "revenue_yesterday": null
+}
