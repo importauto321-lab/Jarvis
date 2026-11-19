@@ -15,7 +15,8 @@ MAX_WORDS = 500
 
 
 def load_inputs(path: str | None = None) -> dict:
-    p = Path(path) if path else HERE / "sample" / "inputs.json"
+    real = HERE / "data" / "inputs.json"
+    p = Path(path) if path else (real if real.exists() else HERE / "sample" / "inputs.json")
     return json.loads(p.read_text(encoding="utf-8"))
 
 

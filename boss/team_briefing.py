@@ -13,7 +13,7 @@ HERE = Path(__file__).parent
 
 
 def load(path: str | None = None) -> dict:
-    return json.loads(Path(path or HERE / "sample" / "team.json").read_text(encoding="utf-8"))
+    return json.loads(Path(path or (HERE / "data" / "team.json" if (HERE / "data" / "team.json").exists() else HERE / "sample" / "team.json")).read_text(encoding="utf-8"))
 
 
 def build(data: dict, today: date | None = None) -> str:

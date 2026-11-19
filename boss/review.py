@@ -12,7 +12,7 @@ KEYS = ("quotes_sent", "quotes_booked", "loads_moved", "money_collected")
 
 
 def load(path: str | None = None) -> dict:
-    return json.loads(Path(path or HERE / "sample" / "activity.json").read_text(encoding="utf-8"))
+    return json.loads(Path(path or (HERE / "data" / "activity.json" if (HERE / "data" / "activity.json").exists() else HERE / "sample" / "activity.json")).read_text(encoding="utf-8"))
 
 
 def _sum(days) -> dict:
