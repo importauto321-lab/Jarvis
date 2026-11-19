@@ -34,28 +34,38 @@ def pick(items: list, today: date) -> str:
     return items[today.toordinal() % len(items)] if items else "Nothing today."
 
 
-def build(inputs: dict, today: date | None = None) -> str:
+def gather(inputs: dict, today: date | None = None) -> dict:
+    """The briefing's information as data. The text briefing and the dashboard both use this."""
     today = today or date.today()
-    out = [f"CEO BRIEFING, {today:%A %B %d}" + ("  [SAMPLE DATA, not real]" if inputs.get("sample") else "")]
-    out += ["", "1. Today's calendar and deadlines"]
-    out += [f"   {e['time']}  {e['title']}" for e in inputs.get("calendar", [])[:8]] or ["   Nothing scheduled."]
-
-    out += ["", "2. Emails that need you personally"]
     ranked = inbox.sort_messages(inputs.get("emails", []), today=today)
-    top = [m for m in ranked if m["tier"] in ("URGENT", "TODAY")][:5]
-    out += [f"   [{m['tier']}] {m['subject'][:70]} ({m['from'][:30]})" for m in top] or ["   Nothing urgent."]
+    return {
+        "today": today, "sample": bool(inputs.get("sample")),
+        "calendar": inputs.get("calendar", [])[:8],
+        "emails": [m for m in ranked if m["tier"] in ("URGENT", "TODAY")][:5],
+        "drafts": {k: v for k, v in drafts_waiting().items() if v},
+        "late": invoices.unpaid_report(today)[:3],
+        "idea": pick(inputs.get("ideas", []), today),
+        "watch": pick(inputs.get("watch", []), today),
+        "revenue": inputs.get("revenue_yesterday"),
+    }
 
+
+REV_MISSING = "Not connected yet. Needs read-only Trucking Office access, set up at the house."
+
+
+def build(inputs: dict, today: date | None = None) -> str:
+    g = gather(inputs, today)
+    out = [f"CEO BRIEFING, {g['today']:%A %B %d}" + ("  [SAMPLE DATA, not real]" if g["sample"] else "")]
+    out += ["", "1. Today's calendar and deadlines"]
+    out += [f"   {e['time']}  {e['title']}" for e in g["calendar"]] or ["   Nothing scheduled."]
+    out += ["", "2. Emails that need you personally"]
+    out += [f"   [{m['tier']}] {m['subject'][:70]} ({m['from'][:30]})" for m in g["emails"]] or ["   Nothing urgent."]
     out += ["", "3. Decisions waiting on you (drafts to approve; nothing has been sent)"]
-    waiting = {k: v for k, v in drafts_waiting().items() if v}
-    out += [f"   {v} {k}" for k, v in waiting.items()] or ["   No drafts waiting."]
-    late = invoices.unpaid_report(today)[:3]
-    out += [f"   Late: {x.strip()}" for x in late]
-
-    out += ["", "4. One idea", "   " + pick(inputs.get("ideas", []), today)]
-    out += ["", "5. One thing to watch this week", "   " + pick(inputs.get("watch", []), today)]
-    rev = inputs.get("revenue_yesterday")
-    out += ["", "6. Yesterday's revenue",
-            f"   ${float(rev):,.2f}" if rev is not None else "   Not connected yet. Needs read-only Trucking Office access, set up at the house."]
+    out += [f"   {v} {k}" for k, v in g["drafts"].items()] or ["   No drafts waiting."]
+    out += [f"   Late: {x.strip()}" for x in g["late"]]
+    out += ["", "4. One idea", "   " + g["idea"], "", "5. One thing to watch this week", "   " + g["watch"]]
+    rev = g["revenue"]
+    out += ["", "6. Yesterday's revenue", f"   ${float(rev):,.2f}" if rev is not None else "   " + REV_MISSING]
     text = "\n".join(out) + "\n"
     if len(text.split()) > MAX_WORDS:
         raise ValueError("Briefing is too long; shorten the inputs.")

@@ -115,3 +115,26 @@ def unpaid_report(today: date | None = None) -> list[str]:
     late = [(days_late(r, today), r) for r in load()]
     return [f"{d:>4} days late  {r['invoice']}  {r['customer']}  ${float(r['amount']):,.2f}"
             for d, r in sorted(late, key=lambda x: -x[0]) if d > 0]
+
+
+def chaser_status(today: date | None = None, reminder_days: int = 7, demand_days: int = 30) -> list[dict]:
+    """The invoice chaser's list: every unpaid late invoice and its next step. Nothing is sent."""
+    today = today or date.today()
+    out = []
+    for r in load():
+        d = days_late(r, today)
+        if d <= 0:
+            continue
+        if r.get("demand_drafted"):
+            step = "Demand letter drafted: attorney reviews, then you decide"
+        elif d >= demand_days:
+            step = "Demand letter due: draft it, attorney reviews"
+        elif r.get("reminder_drafted"):
+            step = "Reminder drafted: approve and send it yourself"
+        elif d >= reminder_days:
+            step = "Reminder due: draft it"
+        else:
+            step = "Wait: not late enough yet"
+        out.append({"invoice": r["invoice"], "customer": r["customer"], "amount": float(r["amount"]),
+                    "days_late": d, "step": step})
+    return sorted(out, key=lambda x: -x["days_late"])

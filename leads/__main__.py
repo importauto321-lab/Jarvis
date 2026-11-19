@@ -30,7 +30,7 @@ def main(argv=None) -> int:
     q.add_argument("--miles", type=float, help="miles, if you know them")
     q.add_argument("--live", action="store_true", help="look up miles on the free OpenStreetMap map")
     ii = sub.add_parser("invoices", help="import | unpaid | chase | demand | review")
-    ii.add_argument("action", choices=["import", "unpaid", "chase", "demand", "review"])
+    ii.add_argument("action", choices=["import", "unpaid", "status", "chase", "demand", "review"])
     ii.add_argument("file", nargs="?")
     ib = sub.add_parser("inbox", help="suggest an order for an exported mailbox (.mbox, folder of .eml, or .json)")
     ib.add_argument("file"); ib.add_argument("--out", help="also save the report to this file")
@@ -68,6 +68,11 @@ def main(argv=None) -> int:
     elif args.cmd == "invoices":
         if args.action == "import":
             print(f"{invoices.import_csv(args.file)} invoices imported.")
+        elif args.action == "status":
+            rows = invoices.chaser_status()
+            for r in rows:
+                print(f"{r['days_late']:>4} days  {r['invoice']}  {r['customer']}  ${r['amount']:,.2f}  -> {r['step']}")
+            if not rows: print("No late invoices.")
         elif args.action == "unpaid":
             print("\n".join(invoices.unpaid_report()) or "No late invoices.")
         else:
