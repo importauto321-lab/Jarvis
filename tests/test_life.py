@@ -121,3 +121,12 @@ def test_doctor_reports_without_changing_anything(tmp_path, monkeypatch):
     from leads import doctor
     out = doctor.report()
     assert "Nothing was changed" in out and "[todo]" in out
+
+
+def test_gemini_checker_default(monkeypatch):
+    from leads import checker
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(SystemExit):
+        checker.second_opinion_gemini("hi")
+    fake = _fake('VERDICT: disagree')
+    assert checker.second_opinion_gemini("hi", key="k", post=fake) == "VERDICT: disagree"

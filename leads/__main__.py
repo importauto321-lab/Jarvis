@@ -37,8 +37,9 @@ def main(argv=None) -> int:
     lo = sub.add_parser("loads", help="match a loads CSV to your routes and suggest a truck load")
     lo.add_argument("file"); lo.add_argument("--capacity", type=int, default=9)
     sub.add_parser("doctor", help="what is still missing before real data works")
-    ck = sub.add_parser("check", help="ChatGPT second opinion on a text file (needs OPENAI_API_KEY and --live)")
+    ck = sub.add_parser("check", help="second opinion on a text file: free Gemini by default (needs --live)")
     ck.add_argument("file"); ck.add_argument("--live", action="store_true")
+    ck.add_argument("--openai", action="store_true", help="use ChatGPT instead of free Gemini (needs OPENAI_API_KEY)")
     sub.add_parser("list", help="show the reply tracker")
     args = ap.parse_args(argv)
 
@@ -108,8 +109,9 @@ def main(argv=None) -> int:
         print(doctor.report())
     elif args.cmd == "check":
         if not args.live:
-            print("Dry run: nothing sent to ChatGPT. Add --live (needs OPENAI_API_KEY)."); return 0
-        print(checker.second_opinion(open(args.file, encoding="utf-8").read()))
+            print("Dry run: nothing sent. Add --live (uses free Gemini; needs GEMINI_API_KEY)."); return 0
+        text = open(args.file, encoding="utf-8").read()
+        print(checker.second_opinion(text) if args.openai else checker.second_opinion_gemini(text))
     elif args.cmd == "rank":
         rows = ranking.rank(store.load()); store.save(rows)
         for r in rows:

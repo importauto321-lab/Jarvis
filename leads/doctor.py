@@ -23,7 +23,7 @@ def checks() -> list[tuple[bool, str]]:
                         ("Daily activity and goals imported", ROOT / "boss" / "data" / "activity.json")):
         out.append((path.exists(), f"{label} (real data, not sample)"))
     out.append((bool(os.environ.get("GEMINI_API_KEY")), "GEMINI_API_KEY set (lead finder, video lessons)"))
-    out.append((bool(os.environ.get("OPENAI_API_KEY")), "OPENAI_API_KEY set (ChatGPT checker; optional until the card works)"))
+    out.append((bool(os.environ.get("OPENAI_API_KEY")), "OPENAI_API_KEY set (optional: ChatGPT checker; the free Gemini checker works without it)"))
     return out
 
 
