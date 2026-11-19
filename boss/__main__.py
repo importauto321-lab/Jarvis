@@ -2,7 +2,7 @@
 import argparse
 from datetime import date
 
-from . import briefing, dashboard, review
+from . import briefing, dashboard, review, team_briefing
 
 
 def main(argv=None) -> int:
@@ -10,7 +10,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, h in (("briefing", "today's CEO briefing"), ("evening", "end-of-day summary against your goals"),
                     ("weekly", "weekly roll-up: what went well, what to fix"),
-                    ("dashboard", "one-screen HTML page with all of it")):
+                    ("dashboard", "one-screen HTML page with all of it"),
+                    ("team", "Nicole and Kaysha day-to-day briefing (draft file, not sent)")):
         s = sub.add_parser(name, help=h)
         s.add_argument("--inputs", help="briefing JSON (default: pretend sample)")
         s.add_argument("--activity", help="daily numbers JSON (default: pretend sample)")
@@ -20,6 +21,9 @@ def main(argv=None) -> int:
     if args.cmd == "briefing":
         text = briefing.build(briefing.load_inputs(args.inputs), today)
         print(text); print("Saved to", briefing.save(text, today), "(not sent anywhere)")
+    elif args.cmd == "team":
+        text = team_briefing.build(team_briefing.load(args.inputs), today)
+        print(text); print("Draft saved to", team_briefing.save_draft(text, today), "(not sent)")
     elif args.cmd == "evening":
         print(review.evening(review.load(args.activity), today))
     elif args.cmd == "weekly":
