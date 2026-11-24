@@ -153,7 +153,25 @@ served from this repository (`docs/vendor/`) rather than a CDN.
 | "search for pasta recipes" | Google search in your browser |
 | "take a note buy milk" / "read my notes" | Notes saved to `~/.jarvis_notes.txt` |
 | "tell me a joke", "hello", "what can you do" | Small talk |
+| "ask Hermes to check my inbox" | Sends the task to Hermes and speaks the answer (see below) |
 | "goodbye" | Ends the session |
+
+## Talking to Hermes (Python version, on the computer that runs Hermes)
+
+"Jarvis, ask Hermes to ..." (also "tell Hermes ...", "have Hermes ...") sends the task to
+your local Hermes Agent and speaks its answer. Jarvis says "Sending that to Hermes", Hermes
+does the work, and Jarvis reads back one to three short sentences. If the answer is longer,
+the full text is printed on screen. Hermes is told to draft only: it must not send, pay,
+delete, or change settings without your OK. Voice can't answer Hermes's approval questions
+yet, so a task that needs approval stops and says so.
+
+One-time setup: in `~/.hermes/.env` set `API_SERVER_ENABLED=true` and
+`API_SERVER_KEY=<a long random secret>`, then restart Hermes. The server only listens on
+this computer (`127.0.0.1:8642`). Jarvis reads the key from that file, or from
+`JARVIS_HERMES_KEY`. Never commit the key. Other settings: `JARVIS_HERMES_URL`,
+`JARVIS_HERMES_TIMEOUT` (seconds, default 300). Replies are spoken with `pyttsx3`, or the
+Mac's built-in `say` voice if `pyttsx3` isn't installed. The iPad web version can't reach
+Hermes yet.
 
 ## Setup
 
@@ -218,6 +236,7 @@ pass the command on to the next skill (or to Claude).
 - `jarvis/assistant.py` — wake word handling and the listen → respond loop
 - `jarvis/skills.py` — built-in skills and the `@skill` registry
 - `jarvis/brain.py` — Claude conversation fallback
+- `jarvis/hermes.py` — sends tasks to a local Hermes Agent
 - `jarvis/youtube.py` — watching YouTube videos with Gemini, as a tool for Claude
 - `jarvis/speech.py` — microphone / keyboard input, voice / console output
 - `tests/` — `pytest`

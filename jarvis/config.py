@@ -25,6 +25,8 @@ class Config:
     effort: str = field(default_factory=lambda: os.environ.get("JARVIS_EFFORT", "low"))
     gemini_api_key: str = field(default_factory=lambda: os.environ.get("GEMINI_API_KEY", "").strip())
     gemini_model: str = field(default_factory=lambda: os.environ.get("JARVIS_GEMINI_MODEL", youtube.DEFAULT_MODELS))
+    hermes_url: str = field(default_factory=lambda: os.environ.get("JARVIS_HERMES_URL", "").strip())
+    hermes_timeout: float = field(default_factory=lambda: float(os.environ.get("JARVIS_HERMES_TIMEOUT", "300")))
     voice_rate: int = field(default_factory=lambda: int(os.environ.get("JARVIS_VOICE_RATE", "180")))
     notes_file: Path = field(
         default_factory=lambda: Path(os.environ.get("JARVIS_NOTES_FILE", Path.home() / ".jarvis_notes.txt"))

@@ -8,7 +8,7 @@ import sys
 from .assistant import Assistant
 from .brain import make_brain
 from .config import Config
-from .speech import ConsoleSpeaker, MicrophoneListener, TextListener, VoiceSpeaker
+from .speech import ConsoleSpeaker, MacSaySpeaker, MicrophoneListener, TextListener, VoiceSpeaker
 
 
 def main(argv=None) -> int:
@@ -46,7 +46,10 @@ def main(argv=None) -> int:
         try:
             speaker = VoiceSpeaker(config.name, config.voice_rate)
         except Exception as exc:  # missing pyttsx3 / no speech engine
-            print(f"Text-to-speech unavailable ({exc}); printing replies instead.", file=sys.stderr)
+            try:
+                speaker = MacSaySpeaker(config.name, config.voice_rate)  # macOS has its own voice
+            except Exception:
+                print(f"Text-to-speech unavailable ({exc}); printing replies instead.", file=sys.stderr)
 
     brain = None if args.no_ai else make_brain(config.name, config.model, config.effort,
                                               config.gemini_api_key, config.gemini_model)
