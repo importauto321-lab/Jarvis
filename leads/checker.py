@@ -3,6 +3,7 @@ Default checker is Gemini (free plan, GEMINI_API_KEY). ChatGPT can be added late
 OFF until you add --live and have a key. NOT tested against real Gemini or ChatGPT: reply formats are unverified."""
 import json
 import os
+import urllib.error
 import urllib.request
 
 URL = "https://api.openai.com/v1/chat/completions"
@@ -12,6 +13,13 @@ INSTRUCTIONS = ("You are a careful second reviewer for a small car hauling busin
                 "professional must review it. Do not invent facts.")
 
 
+def _http_help(code: int) -> str:
+    return {401: "OpenAI says the key is wrong. Check OPENAI_API_KEY (no spaces, whole key).",
+            429: "OpenAI says no credit left or too many requests. Check billing at platform.openai.com.",
+            404: "OpenAI does not know that model name. Check 'openai_model' in settings.json."
+            }.get(code, f"OpenAI returned error {code}. Nothing was changed.")
+
+
 def second_opinion(text: str, model: str = "gpt-4o-mini", key: str = "", post=None) -> str:
     key = key or os.environ.get("OPENAI_API_KEY", "")
     if not key:
@@ -19,8 +27,15 @@ def second_opinion(text: str, model: str = "gpt-4o-mini", key: str = "", post=No
     body = json.dumps({"model": model, "messages": [{"role": "system", "content": INSTRUCTIONS},
                                                     {"role": "user", "content": text}]}).encode()
     req = urllib.request.Request(URL, body, {"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-    with (post or urllib.request.urlopen)(req, timeout=60) as r:
-        return json.load(r)["choices"][0]["message"]["content"]
+    try:
+        with (post or urllib.request.urlopen)(req, timeout=60) as r:
+            return json.load(r)["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        raise SystemExit(_http_help(e.code))
+    except urllib.error.URLError as e:
+        raise SystemExit(f"Could not reach OpenAI ({e.reason}). Check the internet and try again.")
+    except (KeyError, IndexError, ValueError):
+        raise SystemExit("OpenAI replied in a form I did not expect. Nothing was changed; try again.")
 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"

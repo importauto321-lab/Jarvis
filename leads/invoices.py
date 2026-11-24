@@ -3,6 +3,7 @@
 Invoices come from a CSV you export (columns: invoice, customer, email, load, amount, due_date, paid_date).
 Dates are YYYY-MM-DD. A blank paid_date means unpaid.
 """
+from __future__ import annotations
 import csv
 from datetime import date, datetime, timedelta
 from pathlib import Path

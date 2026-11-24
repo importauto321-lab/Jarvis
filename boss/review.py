@@ -3,6 +3,7 @@
 Numbers come from a JSON file of daily activity (quotes sent and booked, loads moved, money collected, why deals
 were lost) and Dee's goals. Pretend data until the real numbers are plugged in. Reads numbers, sends nothing.
 """
+from __future__ import annotations
 import json
 from datetime import date, timedelta
 from pathlib import Path

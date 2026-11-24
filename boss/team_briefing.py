@@ -1,6 +1,7 @@
 """Nicole and Kaysha's day-to-day briefing: bookings, loads, invoices, unpaid balances, urgent email.
 Until the app exists it goes by email or text. This only builds the text and a Gmail-ready draft file.
 It never sends. Dee decides what goes to them (this is a first version)."""
+from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path

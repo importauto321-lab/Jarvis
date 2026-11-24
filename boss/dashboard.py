@@ -1,5 +1,6 @@
 """Dashboard: the morning briefing, the evening summary and the invoice chaser on one screen.
 One self-contained HTML file (no internet needed). Open it on the iPad. Read-only; it sends nothing."""
+from __future__ import annotations
 from datetime import date
 from html import escape as e
 from pathlib import Path
