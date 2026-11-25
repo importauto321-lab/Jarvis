@@ -1920,10 +1920,18 @@ async function handle(raw, { tapped = false } = {}) {
     const answer = await askHermes(forHermes[1].trim());
     waiting.classList.remove("pending");
     waiting.textContent = answer.text;
+    if (answer.ok) {
+      // Say plainly who answered: it is read in Jarvis's voice, so without this it looks like Jarvis replied.
+      waiting.textContent = "Hermes says: " + answer.text;
+      const proof = document.createElement("span");
+      proof.className = "memory-note";
+      proof.textContent = "Answered by Hermes on your computer at " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) + ".";
+      waiting.appendChild(proof);
+    }
     log.scrollTop = log.scrollHeight;
     setState(null);
     busy = false; sendBtn.disabled = false;
-    speak(answer.ok ? hermesSpeakable(answer.text) : answer.text, afterReply);
+    speak(answer.ok ? "Hermes says: " + hermesSpeakable(answer.text) : answer.text, afterReply);
     return;
   }
 
