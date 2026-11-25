@@ -332,7 +332,9 @@ let silentFailures = 0;   // sessions that ended without starting or hearing any
 const MAX_QUIET_ROUNDS = 0;   // listen once after each answer; every restart of the iPad's listening makes a click
 const START_TIMEOUT_MS = 4000;   // no "started" by then: the microphone didn't open
 const NOTHING_HEARD_MS = 9000;   // listening this long without a single word: stop
-const PAUSE_AFTER_WORDS_MS = 1600; // words stopped coming for this long: you've finished speaking
+// Quiet this long means you've finished speaking. Chosen in Settings, so long sentences with pauses aren't cut off.
+const PAUSE_CHOICES = { short: 2000, normal: 3500, long: 5000 };
+const pauseMs = () => PAUSE_CHOICES[store.get("pause", "normal")] || PAUSE_CHOICES.normal;
 if (!Recognition) $("hint").textContent = "This browser can't listen. Open this page in Safari or Chrome, or type below.";
 
 const MIC_ERRORS = {
@@ -421,7 +423,7 @@ function listen() {
   const r = new Recognition();
   r.lang = "en-US";
   r.interimResults = true;
-  r.continuous = false;
+  r.continuous = true; // keep going through pauses; the pause timer below decides when you've finished
   const s = { rec: r, finalText: "", heard: "", error: "", started: false, timers: {} };
   session = s;
   // Each handler checks it still belongs to the current session, so an old listener can't interfere.
@@ -434,15 +436,17 @@ function listen() {
   };
   r.onresult = (e) => {
     if (session !== s) return;
-    let text = "";
-    for (const res of e.results) text += res[0].transcript;
+    const parts = [];
+    for (const res of e.results) parts.push(res[0].transcript.trim());
+    const text = parts.filter(Boolean).join(" ");
     s.heard = text;
     input.value = text;
-    if (e.results[e.results.length - 1].isFinal) s.finalText = text;
+    // Only trust "final" for the whole thing: words after the last final piece must not be dropped.
+    s.finalText = e.results[e.results.length - 1].isFinal ? text : "";
     clearTimeout(s.timers.nothing);
     // Safari sometimes never marks the words final or stops by itself, so stop once you've paused.
     clearTimeout(s.timers.pause);
-    s.timers.pause = setTimeout(() => endSession(s), PAUSE_AFTER_WORDS_MS);
+    s.timers.pause = setTimeout(() => endSession(s), pauseMs());
   };
   r.onerror = (e) => { if (session === s) s.error = e.error; };
   r.onend = () => endSession(s);
@@ -469,8 +473,7 @@ const hearWithGemini = () => canRecord && !!store.get("geminiKey") && store.get(
   !(Recognition && Date.now() < geminiBackupUntil);
 let audioCtx = null;      // made on the first tap, so the iPad lets it run
 let transcribing = false;
-const SILENCE_AFTER_SPEECH_MS = 2500; // quiet this long after you've spoken: you've finished (short pauses mid-sentence are fine)
-const MAX_RECORD_MS = 30000;
+const MAX_RECORD_MS = 90000;          // room for a long paragraph
 const NO_METER_RECORD_MS = 7000;      // if loudness can't be measured, record this long and let Gemini decide
 // Writing down a few seconds of speech is a quick job: the light model goes first, with thinking turned off.
 const HEARING_MODELS = ["gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-flash-latest"];
@@ -534,7 +537,7 @@ async function listenRecorded() {
       if (now - t0 < 300) { floor = (floor * samples + level) / ++samples; return; }
       s.peak = Math.max(s.peak || 0, level);
       if (level > Math.max(0.006, Math.min(floor, 0.01) * 2.5)) { s.spoke = true; lastLoud = now; }
-      if (s.spoke && now - lastLoud > SILENCE_AFTER_SPEECH_MS) finishRecording(s);
+      if (s.spoke && now - lastLoud > pauseMs()) finishRecording(s);
     }, 100);
     s.timers.nothing = setTimeout(() => { if (!s.spoke) finishRecording(s); }, NOTHING_HEARD_MS);
     s.timers.max = setTimeout(() => finishRecording(s), MAX_RECORD_MS);
@@ -594,7 +597,7 @@ async function recordingStopped(s) {
     const audio = await toWav(blob).catch(() => blob);
     const words = await geminiGenerate(
       [{ inline_data: { mime_type: audio.type || "audio/mp4", data: await toBase64(audio) } }, { text: TRANSCRIBE_PROMPT }],
-      { timeoutMs: 15000, workingLabel: "Hearing you", models: HEARING_MODELS, light: true, moveOnTimeout: true, retryWaits: [1000],
+      { timeoutMs: 30000, workingLabel: "Hearing you", models: HEARING_MODELS, light: true, moveOnTimeout: true, retryWaits: [1000],
         generationConfig: { thinkingConfig: { thinkingBudget: 0 } } });
     s.heard = /^\W*silence\W*$/i.test(words) ? "" : words.replace(/^["']|["']$/g, "").trim();
     $("hint").textContent += ` Gemini heard: "${s.heard || "nothing"}".`;
@@ -1446,6 +1449,9 @@ const GOOGLE_TOOLS = [
       required: ["to", "body"],
     },
     async run({ to, body }) {
+      if (HERMES_NAME_RE.test(String(to || ""))) {
+        throw new Error("Hermes is the assistant on the user's computer, not a person to text. Tell the user to say: ask Hermes, then the task.");
+      }
       if (!String(body || "").trim()) throw new Error("The message is empty. Ask the user what to say.");
       textReady = textDraft(to, body);
       return "The text is on the user's screen. They tap Open in Messages, check it, and tap Send. Tell them it's ready; don't read the whole text back unless it's short.";
@@ -1633,6 +1639,8 @@ const SYSTEM = `You are ${NAME}, the user's personal assistant and right-hand ma
   "code blocks, emoji, or URLs. If a question needs a long answer, give the key point and offer to go deeper. " +
   "You speak through the device's speaker; if the user says they can't hear you, they mean your voice, " +
   "so suggest turning the volume up and Silent Mode off. The page handles time, timers, notes and links itself.\n\n" +
+  "Hermes is not a person or a contact: it is an assistant on the user's own computer, and you cannot reach it. Never text or call Hermes. " +
+  "If the user wants something from Hermes, tell them to start the sentence with: ask Hermes. " +
   "When the user asks to text someone, write the message with write_text_message. You can't send texts; the user taps Send in Messages. " +
   "When the user asks to call someone, use start_phone_call. You can't see their contacts, so if you don't know the number, ask for it. You can't place calls; the user taps Call.\n\n" +
   "When the user shares a YouTube link, use watch_youtube_video to watch it, then answer from what it tells you. " +
@@ -1755,7 +1763,14 @@ async function askClaude(question) {
 // ---------- Hermes on the user's own computer ----------
 // Only the user's own words go to Hermes ("ask Hermes to ..."). Claude has no tool for it, so text found in an
 // email or web page can never send Hermes a task. Hermes can run commands on that computer.
-const HERMES_RE = /^(?:please )?(?:ask|tell|have|get|let) (?:hermes|hermies) (?:to |that |about |if |whether )?(.+)$/i;
+// Speech-to-text adds commas and polite words, and spells the name in several ways, so all of those are accepted.
+const HERMES_NAME = "(?:hermes|hermès|hermies|hermees|hermez|herms|her mes)";
+const HERMES_NAME_RE = new RegExp(`^\\s*${HERMES_NAME}(?:'s)?\\s*$`, "i");
+const HERMES_RE = new RegExp(
+  "^(?:(?:please|can you|could you|will you|would you|i want you to|i need you to|go ahead and|and|now|okay|ok|hey|so|um|uh)[\\s,]+)*" +
+  "(?:(?:ask|tell|have|get|let|message|text|send)\\s+(?:(?:an? )?(?:text|message|task)(?: message)? to )?" + HERMES_NAME + "(?![a-zè])(?:'s)?" +
+  "|" + HERMES_NAME + "(?=\\s*[,:]))" +
+  "[\\s,.:;!?-]*(?:an? (?:text|message|task)(?: message)?\\b[\\s,:]*)?(?:(?:saying|that says|to say|to|that|about|if|whether)\\b[\\s,:]*)?(.*)$", "i");
 const HERMES_ADDRESS_RE = /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.ts\.net$/;
 const HERMES_TIMEOUT_MS = 300000;
 const HERMES_INSTRUCTIONS =
@@ -1893,6 +1908,10 @@ async function handle(raw, { tapped = false } = {}) {
   }
 
   const forHermes = command.match(HERMES_RE);
+  if (forHermes && !forHermes[1].trim()) {
+    const msg = "What should I ask Hermes? Say it all at once, like: ask Hermes what day follows Friday.";
+    addMsg("bot", msg); speak(msg, afterReply); return;
+  }
   if (forHermes) {
     busy = true; sendBtn.disabled = true;
     setState("thinking", "Asking Hermes");
@@ -2110,6 +2129,8 @@ $("clearHermes").onclick = () => {
   $("hermesKey").value = ""; renderHermesStatus();
   addMsg("bot", "Hermes removed from this device.");
 };
+$("pauseLength").value = PAUSE_CHOICES[store.get("pause", "normal")] ? store.get("pause", "normal") : "normal";
+$("pauseLength").onchange = (e) => store.set("pause", e.target.value);
 $("useLocation").checked = store.get("location") === "on";
 $("useLocation").onchange = (e) => {
   store.set("location", e.target.checked ? "on" : "off");
