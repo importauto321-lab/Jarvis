@@ -1752,6 +1752,57 @@ async function askClaude(question) {
   }
 }
 
+// ---------- Hermes on the user's own computer ----------
+// Only the user's own words go to Hermes ("ask Hermes to ..."). Claude has no tool for it, so text found in an
+// email or web page can never send Hermes a task. Hermes can run commands on that computer.
+const HERMES_RE = /^(?:please )?(?:ask|tell|have|get|let) (?:hermes|hermies) (?:to |that |about |if |whether )?(.+)$/i;
+const HERMES_ADDRESS_RE = /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.ts\.net$/;
+const HERMES_TIMEOUT_MS = 300000;
+const HERMES_INSTRUCTIONS =
+  "A voice assistant named Jarvis is passing you a task from its owner. Your reply will be read aloud, so finish with " +
+  "one to three short, plain spoken sentences: no markdown, bullet points, code, or links. Draft only: never send a " +
+  "message or email, spend or move money, post, book, or delete anything, and never change settings, without the " +
+  "owner's clear OK. If a step needs approval, say so briefly and stop. Never invent facts; say what you could not do.";
+
+async function askHermes(task) {
+  const url = store.get("hermesUrl"), key = store.get("hermesKey");
+  if (!url || !key) return { ok: false, text: "Hermes isn't set up on this device. Add its address and key in Settings." };
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), HERMES_TIMEOUT_MS);
+  try {
+    const res = await fetch(url + "/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify({ model: "hermes-agent", stream: false,
+        messages: [{ role: "system", content: HERMES_INSTRUCTIONS }, { role: "user", content: task }] }),
+      signal: abort.signal,
+    });
+    if (res.status === 401) return { ok: false, text: "Hermes turned down the key. Check the Hermes key in Settings." };
+    if (!res.ok) return { ok: false, text: `Hermes returned error ${res.status}.` };
+    const choice = (await res.json())?.choices?.[0];
+    if (!choice) return { ok: false, text: "Hermes answered in a form I didn't expect." };
+    if (choice.finish_reason === "error" || choice.finish_reason === "cancelled") return { ok: false, text: "Hermes couldn't finish that task." };
+    return { ok: true, text: String(choice.message?.content || "").trim() || "Hermes finished but had nothing to say." };
+  } catch {
+    return { ok: false, text: abort.signal.aborted
+      ? "Hermes is taking too long. It may still be working on it."
+      : "I can't reach Hermes. Check that Tailscale is on, and that your computer is awake with Hermes open." };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// The whole answer stays on screen; only a short, clean version is spoken.
+function hermesSpeakable(text) {
+  const clean = text.replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "a link")
+    .replace(/^\s*(?:[-+•]|\d+[.)])\s+/gm, "").replace(/[*_`#>|~]+/g, "").replace(/\s*\n+\s*/g, ". ")
+    .replace(/\.(\s*\.)+/g, ".").replace(/\s+/g, " ").trim();
+  const sentences = clean.split(/(?<=[.!?])\s+/);
+  let spoken = sentences.slice(0, 3).join(" "), shortened = sentences.length > 3;
+  if (spoken.length > 400) { spoken = spoken.slice(0, 400).replace(/\s+\S*$/, "") + "."; shortened = true; }
+  return (spoken || "Done.") + (shortened ? " The full answer is on the screen." : "");
+}
+
 // ---------- main ----------
 let busy = false;
 
@@ -1839,6 +1890,22 @@ async function handle(raw, { tapped = false } = {}) {
       return;
     }
     pendingNote = "The user didn't confirm the earlier action, so it was not done.";
+  }
+
+  const forHermes = command.match(HERMES_RE);
+  if (forHermes) {
+    busy = true; sendBtn.disabled = true;
+    setState("thinking", "Asking Hermes");
+    const waiting = addMsg("bot pending", "Sending that to Hermes...");
+    speak("Sending that to Hermes.");
+    const answer = await askHermes(forHermes[1].trim());
+    waiting.classList.remove("pending");
+    waiting.textContent = answer.text;
+    log.scrollTop = log.scrollHeight;
+    setState(null);
+    busy = false; sendBtn.disabled = false;
+    speak(answer.ok ? hermesSpeakable(answer.text) : answer.text, afterReply);
+    return;
   }
 
   const local = runSkills(command);
@@ -1965,6 +2032,7 @@ $("settingsToggle").onclick = () => {
   const panel = $("settings");
   if (!panel.hidden && $("apiKey").value.trim()) saveKey();
   if (!panel.hidden && $("geminiKey").value.trim()) saveGeminiKey();
+  if (!panel.hidden && $("hermesKey").value.trim()) saveHermes();
   if (!panel.hidden && $("googleClientId").value.trim() && $("googleClientId").value.trim() !== store.get("googleClientId")) saveClientId();
   panel.hidden = !panel.hidden;
   $("settingsToggle").setAttribute("aria-expanded", String(!panel.hidden));
@@ -2018,6 +2086,30 @@ function saveGeminiKey() {
 }
 $("saveGemini").onclick = saveGeminiKey;
 $("geminiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveGeminiKey(); } });
+function renderHermesStatus() {
+  const url = store.get("hermesUrl"), key = store.get("hermesKey");
+  $("hermesStatus").textContent = url && key ? `Hermes is set up on this device (key ends in ${key.slice(-4)}).` : "Not set up on this device.";
+  $("hermesUrl").value = url || "";
+}
+renderHermesStatus();
+function saveHermes() {
+  let url = $("hermesUrl").value.trim().toLowerCase().replace(/\/+$/, "");
+  const key = $("hermesKey").value.replace(/\s+/g, "") || store.get("hermesKey") || "";
+  if (url && !url.includes("://")) url = "https://" + url;
+  if (!HERMES_ADDRESS_RE.test(url)) { addMsg("bot", "The Hermes address should look like https://your-computer.your-network.ts.net."); return; }
+  if (!key) { addMsg("bot", "Paste the Hermes key too, then tap Save Hermes."); return; }
+  const ok = store.set("hermesUrl", url) && store.set("hermesKey", key) && store.get("hermesKey") === key;
+  $("hermesKey").value = "";
+  renderHermesStatus();
+  addMsg("bot", ok ? "Hermes is saved. Say: ask Hermes, then your task." : "I couldn't save that. Turn off Private Browsing in Safari, then try again.");
+}
+$("saveHermes").onclick = saveHermes;
+$("hermesKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveHermes(); } });
+$("clearHermes").onclick = () => {
+  store.set("hermesUrl", null); store.set("hermesKey", null);
+  $("hermesKey").value = ""; renderHermesStatus();
+  addMsg("bot", "Hermes removed from this device.");
+};
 $("useLocation").checked = store.get("location") === "on";
 $("useLocation").onchange = (e) => {
   store.set("location", e.target.checked ? "on" : "off");
@@ -2142,6 +2234,10 @@ $("clearAll").onclick = () => {
   disconnectGoogle();
   store.set("apiKey", null);
   store.set("geminiKey", null);
+  store.set("hermesUrl", null);
+  store.set("hermesKey", null);
+  $("hermesKey").value = "";
+  renderHermesStatus();
   store.set("googleClientId", null);
   clientPromise = null;
   tokenClient = null;

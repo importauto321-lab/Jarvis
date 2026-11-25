@@ -170,8 +170,16 @@ One-time setup: in `~/.hermes/.env` set `API_SERVER_ENABLED=true` and
 this computer (`127.0.0.1:8642`). Jarvis reads the key from that file, or from
 `JARVIS_HERMES_KEY`. Never commit the key. Other settings: `JARVIS_HERMES_URL`,
 `JARVIS_HERMES_TIMEOUT` (seconds, default 300). Replies are spoken with `pyttsx3`, or the
-Mac's built-in `say` voice if `pyttsx3` isn't installed. The iPad web version can't reach
-Hermes yet.
+Mac's built-in `say` voice if `pyttsx3` isn't installed.
+
+### From the iPad
+
+The web page can reach Hermes over your own private Tailscale network. Install Tailscale on the
+computer and the iPad with the same account, run `tailscale serve --bg 8642` on the computer
+(keep Funnel off), and add `API_SERVER_CORS_ORIGINS=https://importauto321-lab.github.io` to
+`~/.hermes/.env`. Then enter the address and key under **Settings -> Hermes** on the iPad. The
+page's security policy only allows the `taila998e7.ts.net` network; change it in
+`docs/index.html` for a different one.
 
 ## Setup
 
