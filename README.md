@@ -162,9 +162,15 @@ served from this repository (`docs/vendor/`) rather than a CDN.
 "Jarvis, ask Hermes to ..." (also "tell Hermes ...", "have Hermes ...") sends the task to
 your local Hermes Agent and speaks its answer. Jarvis says "Sending that to Hermes", Hermes
 does the work, and Jarvis reads back one to three short sentences. If the answer is longer,
-the full text is printed on screen. Hermes is told to draft only: it must not send, pay,
-delete, or change settings without your OK. Voice can't answer Hermes's approval questions
-yet, so a task that needs approval stops and says so.
+the full text is printed on screen.
+
+**Ask me first.** A Hermes hook (`tools/hermes_gate.py`) lets Hermes look at things on its own
+but makes it wait for your yes before anything else: deleting, sending, paying, other
+commands, writing files, code, browser actions and scheduled jobs. On the computer say "yes";
+on the iPad tap **Yes**. Anything else is no. Install it by copying the script to
+`~/.hermes/agent-hooks/ask_first.py`, adding it in `~/.hermes/config.yaml` as a
+`pre_tool_call` hook with `fail_closed: true`, setting `approvals.mode: manual`, and
+approving the hook. It is a safety net, not a sandbox: it can't stop every trick.
 
 One-time setup: in `~/.hermes/.env` set `API_SERVER_ENABLED=true` and
 `API_SERVER_KEY=<a long random secret>`, then restart Hermes. The server only listens on
