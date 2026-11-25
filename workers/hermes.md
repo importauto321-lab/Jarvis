@@ -9,7 +9,7 @@ Wired in: yes, on the iMac, from the computer and the iPad. Always-on (stays awa
 
 ## Rules
 - Ask the user before Hermes sends, pays, deletes or logs into a business account.
-- Do not touch Super Dispatch, Central Dispatch or Trucking Office until the user says so.
+- Do not touch Super Dispatch, Central Dispatch or Trucking Office until the user says so. The gate refuses any request that mentions them; opening them needs a code change.
 - Browser steps and other changes need the user's yes, from the iPad or the computer.
 - Add one power at a time, test each for real on the iMac, and show proof.
 - No cards or banking logins in its browser.
