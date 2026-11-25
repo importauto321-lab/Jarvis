@@ -76,3 +76,26 @@ def test_empty_diff_bad_key_and_model_choice(monkeypatch):
     assert review.pick_model(["gpt-4o", "gpt-4.1"]) == "gpt-4.1"
     with pytest.raises(review.ReviewError):
         review.pick_model(["other"])
+
+
+OTHER = "sk-proj-" + "y" * 60
+GOOD = "sk-proj-" + "z" * 60
+
+
+def test_a_key_pasted_several_times_is_refused():
+    chain = Keychain()
+    with pytest.raises(ValueError, match="more than once"):
+        openai_key.save_key(GOOD + OTHER + GOOD, run=chain)
+    assert chain.stored == ""
+
+
+def test_repair_keeps_only_the_copy_openai_accepts():
+    chain = Keychain()
+    chain.stored = OTHER + GOOD + OTHER
+
+    def check(key):
+        if key != GOOD:
+            raise urllib.error.HTTPError("u", 401, "x", {}, None)
+    assert openai_key.repair(run=chain, check=check).startswith("Repaired")
+    assert chain.stored == GOOD
+    assert "nothing to repair" in openai_key.repair(run=chain, check=check)

@@ -1,6 +1,7 @@
 """Keep the OpenAI key in the macOS Keychain. It is never printed, saved in this folder, or put on a command line.
 
-Run ``python3 tools/openai_key.py`` and paste the key at the hidden prompt.
+Run ``python3 tools/openai_key.py`` and paste the key once at the hidden prompt.
+``python3 tools/openai_key.py --repair`` fixes a saved key that was pasted more than once.
 """
 
 from __future__ import annotations
@@ -31,6 +32,8 @@ def read_key(run=subprocess.run) -> str:
 
 
 def save_key(key: str, run=subprocess.run) -> None:
+    if len(pieces(key)) > 1:
+        raise ValueError("The key was pasted more than once (nothing shows while pasting). Run this again and paste it one time.")
     if not KEY_RE.match(key):
         raise ValueError("That doesn't look like an OpenAI key. It starts with sk- and has no spaces.")
     # Sent on standard input, so the key never shows up in the list of running programs.
@@ -51,8 +54,37 @@ def list_models(key: str, post=None) -> list[str]:
         return [m["id"] for m in json.load(r)["data"]]
 
 
-def main() -> int:
-    key = getpass.getpass("Paste your OpenAI key, then press Return (nothing will show): ").strip()
+def pieces(text: str) -> list[str]:
+    """The separate keys inside a pasted line: one normally, more if it was pasted repeatedly."""
+    starts = [m.start() for m in re.finditer(r"sk-(?:proj|svcacct|admin)-", text)]
+    if not starts:
+        return [text]
+    return [text[a:b] for a, b in zip(starts, starts[1:] + [len(text)])]
+
+
+def repair(run=subprocess.run, check=list_models) -> str:
+    """Keep the one copy OpenAI accepts out of a key that was saved several times over."""
+    saved = read_key_from_keychain(run)
+    if len(pieces(saved)) < 2:
+        return "The saved key is not doubled up, so there is nothing to repair."
+    for candidate in dict.fromkeys(pieces(saved)):
+        try:
+            check(candidate)
+        except urllib.error.HTTPError:
+            continue
+        except urllib.error.URLError as exc:
+            return f"Could not reach OpenAI ({exc.reason}). Nothing was changed."
+        save_key(candidate, run)
+        return "Repaired. One copy is saved and OpenAI accepted it."
+    return "OpenAI accepted none of the copies. Nothing was changed."
+
+
+def main(argv=()) -> int:
+    if "--repair" in argv:
+        message = repair()
+        print(message)
+        return 0 if message.startswith("Repaired") else 1
+    key = getpass.getpass("Paste your OpenAI key ONE time, then press Return (nothing will show): ").strip()
     try:
         save_key(key)
     except ValueError as exc:
@@ -73,4 +105,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
