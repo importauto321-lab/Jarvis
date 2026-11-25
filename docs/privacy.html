@@ -17,7 +17,7 @@
   <p class="meta">Last updated October 28, 2026</p>
 
   <div class="summary">
-    <p><strong>In short:</strong> Jarvis has no server and no account. Everything it saves stays in your own browser. It only sends data to the services you choose to use: Anthropic, to answer questions, and Google, for Gmail, Calendar and watching YouTube videos. It has no ads, analytics or tracking.</p>
+    <p><strong>In short:</strong> Jarvis has no server and no account. Everything it saves stays in your own browser. It only sends data to the services you choose to use: Anthropic, to answer questions, Google, for Gmail, Calendar and watching YouTube videos, and, if you set it up, Hermes on your own computer. It has no ads, analytics or tracking.</p>
   </div>
 
   <p>Jarvis is a personal voice assistant web page hosted on GitHub Pages at <a href="https://importauto321-lab.github.io/Jarvis/">importauto321-lab.github.io/Jarvis</a>. This policy explains what the page stores, what it sends and to whom, and how to remove your data.</p>
@@ -27,6 +27,7 @@
   <table>
     <tr><th>Item</th><th>Why</th></tr>
     <tr><td>Anthropic API key</td><td>So Jarvis can answer general questions using your own key</td></tr>
+    <tr><td>Hermes address and key</td><td>So Jarvis can send tasks to Hermes on your own computer</td></tr>
     <tr><td>Gemini API key</td><td>So Jarvis can watch YouTube videos you link to, and hear you when you tap the circle, using your own key</td></tr>
     <tr><td>Google OAuth client ID</td><td>So Jarvis can ask Google for sign-in</td></tr>
     <tr><td>Google sign-in (access token), that you connected Google, and your Google email address</td><td>So you stay signed in until you tap Disconnect Google. Google makes each sign-in stop working after about an hour; Jarvis then renews it for the same account. Disconnect Google or Clear all keys removes all of this.</td></tr>
@@ -45,6 +46,7 @@
     <li><strong>Location.</strong> Only if you turn on "Use my location" in Settings (your browser also asks your permission). Jarvis reads your device's location only when Claude needs it for a question, like the weather where you are or what's nearby. Every few hours, when you talk to him, he also checks the weather where you are to give you a quick heads-up. It's sent to Anthropic with that question, and its coordinates to BigDataCloud (to name your city; see <a href="https://www.bigdatacloud.com/privacy-policy">their privacy policy</a>) and, for weather, to Open-Meteo (see <a href="https://open-meteo.com/en/terms">their terms</a>). A "find nearby" search opens Apple Maps with what you asked for and your location. Your location is never saved on your device.</li>
     <li><strong>Weather.</strong> When you ask about the weather in a named place, the place name goes to Open-Meteo, a free weather service, to look it up.</li>
     <li><strong>Google Gemini (Jarvis's voice).</strong> Only if you save a Gemini API key and leave the voice engine on "Gemini voice" in Settings. Jarvis sends the text of each spoken answer to Google's Gemini API, using your key, and plays back the voice it returns. The audio isn't saved. Choose "iPad voice" to keep answers on your device. On Gemini's free tier, Google may use what you send to improve its products.</li>
+    <li><strong>Hermes (your computer).</strong> Only if you save a Hermes address and key. When you say "ask Hermes...", Jarvis sends the words of that task over your private Tailscale network to Hermes on your own computer. Hermes then handles it with whatever model provider and tools you set up there. Email and calendar content is not sent to Hermes by Jarvis.</li>
     <li><strong>Texts.</strong> When you ask Jarvis to text someone, it writes the message (with Claude, through Anthropic, unless you said the exact words) and opens your Messages app with it filled in. Jarvis never sends a text itself and never sees what happens in Messages; you tap Send there.</li>
     <li><strong>Calls.</strong> When you ask Jarvis to call someone, it shows the number with a Call button that opens your device's calling. Jarvis never places a call itself, can't see your contacts, and never sees the call.</li>
     <li><strong>Speech.</strong> Speaking uses Gemini's voice, as described above, or your browser's built-in speech. Listening uses Gemini, as described above, when you have a Gemini key and "Use Gemini to hear me" is on; otherwise it uses your browser's built-in speech recognition, and depending on your device and browser, Apple or Google may process the audio of what you say. Jarvis never stores audio.</li>
