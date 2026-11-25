@@ -75,3 +75,7 @@ The full plan the user agreed on is in `PLAN.md`. Show it to them when they ask 
 4. Prompt caching to cut Claude costs (rough heavy-use estimate was $300–500/month without it; normal use $40–100).
 
 The user wants to test that Jarvis talks and hears reliably before building more, then review these plans together.
+
+## Instructions for the AI workers
+
+Before asking for a worker to be wired in or changed, use its saved list in `workers/` and hand over one complete message (`python3 tools/brief.py <name>`, checked with `--check`). When the user mentions a new ability, add it to that file.
