@@ -184,7 +184,8 @@ Mac's built-in `say` voice if `pyttsx3` isn't installed.
 ### Email attachments (web page)
 
 With Gmail connected, ask about an email and Jarvis opens its attached PDFs, pictures and text
-files and answers from them (up to 6 files; Word and Excel files aren't read). Read only. The
+files and answers from them (up to 6 files; Word and Excel files aren't read; pictures are
+read as still images, and text files are assumed to be UTF-8). Read only. The
 file contents go to Anthropic.
 
 ### ChatGPT jobs (web page)
