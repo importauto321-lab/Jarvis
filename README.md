@@ -69,7 +69,8 @@ Claude with that question; the weather comes from Open-Meteo and the city name
 from BigDataCloud, both free with no key. Weather for a named city works even
 with location off.
 
-Tap the circle once to start a conversation: after each answer Jarvis starts
+If Jarvis cuts you off, pick a longer wait under **Settings -> How long to wait after you
+stop talking**. Tap the circle once to start a conversation: after each answer Jarvis starts
 listening again by itself, so there's nothing to press. Tap the circle (or say
 "stop listening") to pause; it also pauses after a few quiet turns. Pick a
 voice under **Settings → Voice**; the choice is saved in that browser.
