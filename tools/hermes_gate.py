@@ -3,8 +3,13 @@
 
 Hermes runs this before every tool call. It lets through a short list of things that only look,
 and makes everything else wait for the owner's yes: deleting, sending, paying, running commands
-that change things, writing files, code, clicks in the browser, scheduled jobs. Anything it does
-not recognise also asks. Secret files are refused outright.
+that change things, writing files, code, scheduled jobs. Anything it does not recognise also asks.
+Secret files are refused outright.
+
+Browser work gets ONE yes per job: the first ordinary browser step asks for the whole job, and
+later ordinary steps run on that yes. A step that looks like sending, paying, deleting, posting
+or signing in asks again on its own. This is judged from the words in the step, so it can miss:
+a click does not say what the button does unless the step says so.
 
 Installed as ``~/.hermes/agent-hooks/ask_first.py`` with ``fail_closed: true``, so if this script
 breaks, Hermes is blocked rather than let loose. It cannot stop every possible trick: for example
@@ -28,6 +33,21 @@ READ_ONLY_COMMANDS = {"ls", "cat", "head", "tail", "wc", "grep", "pwd", "date", 
                       "sw_vers", "df", "du", "stat", "which"}
 # Business sites Hermes must not touch until the owner says so. Refused, not asked.
 OFF_LIMITS = re.compile(r"super[\s_.\-]*dispatch|central[\s_.\-]*dispatch|trucking[\s_.\-]*office", re.IGNORECASE)
+BROWSER_JOB_KEY = "ask-first:browser-job"
+BROWSER_JOB_MARK = "Browse for this whole job"  # Jarvis answers this one for the whole job
+# Words that mean a browser step may send, pay, delete, post or sign in: ask for that step by itself.
+CONSEQUENTIAL = re.compile(
+    r"(?<![a-z])(send|sent|e-?mail|message|pay|paid|payment|buy|purchase|order|checkout|check[ _-]out|donate|transfer|wire|invoice|"
+    r"delete|remove|erase|trash|discard|cancel|unsubscribe|subscribe|post|publish|share|comment|reply|tweet|upload|submit|"
+    r"sign[ _-]?(in|up|on)|log[ _-]?(in|on)|register|create[ _-]?account|new[ _-]?account|authori[sz]e|allow[ _-]access|"
+    r"password|passcode|otp|card|cvv|cvc|confirm|accept|agree|book|reserve|apply|bid|sell|save[ _-]changes)(s|ed|ing)?(?![a-z])",
+    re.IGNORECASE)
+# Things a browser step could do that reach past reading and clicking.
+ESCAPES = re.compile(
+    r"\b(subprocess|shutil|os\.|open\s*\(|eval\s*\(|exec\s*\(|compile\s*\(|getattr|globals|locals|__\w|base64|chr\s*\(|"
+    r"cdp\s*\(|upload_file|dispatch_key|fetch\s*\(|XMLHttpRequest|sendBeacon|requestSubmit|\.submit\b|WebSocket)|"
+    r"press_key\s*\(\s*['\"](Enter|Return)|type_text\s*\([^)]*\\n", re.IGNORECASE)
+IMPORT = re.compile(r"^\s*(from|import)\s+(?!(time|json|re)\b)", re.MULTILINE)
 MAX_SHOWN = 1500
 SHELL_TRICKS = re.compile(r"[;&|<>`\n\r\\]|\$[({]")
 SECRETS = re.compile(
@@ -54,6 +74,31 @@ def is_read_only_command(command: str) -> bool:
     return not any(SECRETS.search(w) or ".hermes" in w for w in words[1:])
 
 
+def is_ordinary_browsing(code: str) -> bool:
+    """Reading, moving around and harmless clicks: fine once the owner has said yes to the job."""
+    if not code.strip() or CONSEQUENTIAL.search(code) or ESCAPES.search(code) or IMPORT.search(code):
+        return False
+    # A screenshot may only be written to a picture file.
+    for target in re.findall(r"capture_screenshot\s*\(\s*(?:path\s*=\s*)?([^,)]*)", code):
+        if target.strip() and not re.fullmatch(r"""['"][^'"]+\.png['"]|full\s*=.*|max_dim\s*=.*""", target.strip()):
+            return False
+    return every_click_is_explained(code)
+
+
+def every_click_is_explained(code: str) -> bool:
+    """Each line that clicks needs a comment right above it (or on it), so there are words to judge it by."""
+    previous = ""
+    for line in (part.strip() for part in code.splitlines()):
+        if not line:
+            continue
+        if not line.startswith("#") and re.search(r"click", line, re.IGNORECASE):
+            note = previous if previous.startswith("#") else line.partition("  #")[2]
+            if len(re.findall(r"[A-Za-z]{2,}", note)) < 2:
+                return False
+        previous = line
+    return True
+
+
 def decide(tool: str, args: dict) -> dict:
     """``{}`` to allow, or a block / approve answer for Hermes."""
     args = args if isinstance(args, dict) else {}
@@ -77,6 +122,12 @@ def decide(tool: str, args: dict) -> dict:
         return {}
     if tool == "process_manage" and args.get("action") in {"list", "poll", "log"}:
         return {}
+    if tool == "browser_exec" and set(args) <= {"code", "timeout"}:
+        code = str(args.get("code", ""))
+        if len(code) <= MAX_SHOWN * 4 and is_ordinary_browsing(code):
+            first = " ".join(code.split())[:300]
+            return {"action": "approve", "rule_key": BROWSER_JOB_KEY,
+                    "message": f"{BROWSER_JOB_MARK}? First step: {first}"}
     detail = str(args.get("command") or args.get("code") or everything)
     if len(detail) > MAX_SHOWN:
         # Never ask for a yes to something that can't be shown in full.

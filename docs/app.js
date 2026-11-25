@@ -2082,7 +2082,10 @@ const HERMES_INSTRUCTIONS =
   "A voice assistant named Jarvis is passing you a task from its owner. Your reply will be read aloud, so finish with " +
   "one to three short, plain spoken sentences: no markdown, bullet points, code, or links. The system pauses and asks " +
   "the owner before anything that deletes, sends, pays, or changes something. If the owner says no or it is refused, " +
-  "do not try another way; say so. Never invent facts; say what you could not do.";
+  "do not try another way; say so. In the browser, start every step with a short comment saying what it does, naming any " +
+  "button or link you click; if it sends, pays, deletes, posts or signs in, use that word. Do not hide what a step does. " +
+  "Never invent facts; say what you could not do.";
+const BROWSER_JOB_MARK = "Browse for this whole job"; // must match tools/hermes_gate.py
 
 class HermesError extends Error {}
 
@@ -2140,9 +2143,11 @@ async function askHermes(task, approve) {
           if (answered.has(id)) continue;
           answered.add(id);
           const askedAt = Date.now();
-          const yes = (await approve(hermesAsked(item))) === true;
+          const asked = hermesAsked(item);
+          const yes = (await approve(asked)) === true;
           deadline += Date.now() - askedAt; // time spent deciding doesn't count
-          const body = { choice: yes ? "once" : "deny" };
+          // One yes covers this job's ordinary browsing; anything else is allowed once.
+          const body = { choice: !yes ? "deny" : asked.startsWith(BROWSER_JOB_MARK) ? "session" : "once" };
           if (item.prompt_id) Object.assign(body, { request_id: item.prompt_id, execution_generation: item.execution_generation });
           await hermesCall(url, key, path + "/approval", body);
         }
@@ -2158,8 +2163,11 @@ async function askHermes(task, approve) {
 
 // The whole request is on screen, and only a tap on Yes allows it: a voice nearby or a TV can't.
 function hermesPermission(what, title = "Hermes is asking permission") {
+  const wholeJob = what.startsWith(BROWSER_JOB_MARK);
   return new Promise((resolve) => {
-    const card = addCard(title, [], "Nothing happens unless you tap Yes.");
+    const card = addCard(wholeJob ? "Let Hermes use the web browser for this whole job?" : title, [],
+      wholeJob ? "It can then visit any site and click. It asks again before steps that look like sending, paying, deleting, posting or signing in, but it can miss one."
+        : "Nothing happens unless you tap Yes.");
     const detail = document.createElement("pre");
     detail.className = "request";
     detail.textContent = what;
@@ -2171,12 +2179,12 @@ function hermesPermission(what, title = "Hermes is asking permission") {
       row.remove();
       const note = document.createElement("span");
       note.className = "memory-note";
-      note.textContent = yes ? "You allowed this once." : "Not allowed.";
+      note.textContent = !yes ? "Not allowed." : wholeJob ? "You allowed browsing for this job." : "You allowed this once.";
       card.appendChild(note);
       resolve(yes);
     };
     const timer = setTimeout(() => done(false), HERMES_DECIDE_MS);
-    for (const [label, cls, yes] of [["Yes, allow once", "send", true], ["No", "toggle", false]]) {
+    for (const [label, cls, yes] of [[wholeJob ? "Yes, for this job" : "Yes, allow once", "send", true], ["No", "toggle", false]]) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = cls;

@@ -27,8 +27,13 @@ INSTRUCTIONS = (
     "aloud, so finish with one to three short, plain spoken sentences: no markdown, bullet points, "
     "code, or links. The system pauses and asks the owner before anything that deletes, sends, pays, "
     "or changes something. If the owner says no or it is refused, do not try another way; say so. "
+    "In the browser, start every step with a short comment saying what it does, naming any button or link "
+    "you click; if it sends, pays, deletes, posts or signs in, use that word. Do not hide what a step does. "
     "Never invent facts; say what you could not do."
 )
+
+
+BROWSER_JOB_MARK = "Browse for this whole job"  # must match tools/hermes_gate.py
 
 
 class HermesError(Exception):
@@ -103,9 +108,11 @@ def ask(task: str, url: str = "", key: str = "", timeout: float = 300,
                     continue
                 answered.add(prompt)
                 asked_at = clock()
-                yes = bool(approve and approve(what_is_asked(item)))
+                asked = what_is_asked(item)
+                yes = bool(approve and approve(asked))
                 deadline += clock() - asked_at  # time spent deciding doesn't count
-                body = {"choice": "once" if yes else "deny"}
+                whole_job = asked.startswith(BROWSER_JOB_MARK)  # one yes covers this job's ordinary browsing
+                body = {"choice": ("session" if whole_job else "once") if yes else "deny"}
                 if item.get("prompt_id"):
                     body.update(request_id=item["prompt_id"], execution_generation=item.get("execution_generation"))
                 call(run_path + "/approval", body)
