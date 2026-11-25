@@ -82,3 +82,14 @@ def test_wildcards_and_recursive_searches_ask(command):
 def test_hermes_folder_needs_a_yes():
     assert action("search_files", path="/Users/a/.hermes", pattern="key") == "approve"
     assert action("read_file", path="/Users/a/.hermes/config.yaml") == "approve"
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("browser_exec", {"code": "goto('https://app.superdispatch.com/login')"}),
+    ("web_extract", {"urls": ["https://www.centraldispatch.com"]}),
+    ("terminal", {"command": "open https://truckingoffice.com"}),
+    ("web_search", {"query": "Central Dispatch loads"}),
+    ("browser_exec", {"code": "click('Trucking Office')"}),
+])
+def test_business_sites_are_off_limits(tool, args):
+    assert hermes_gate.decide(tool, args)["action"] == "block"

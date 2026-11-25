@@ -280,3 +280,12 @@ pass the command on to the next skill (or to Claude).
 ```bash
 pip install pytest && python -m pytest
 ```
+
+## Always-on iMac
+
+Two login items in `~/Library/LaunchAgents` keep the worker available: `com.jarvis.keepawake`
+(`caffeinate`, so the Mac does not sleep) and `com.jarvis.startup` (reopens Tailscale and
+Hermes at login and every 10 minutes). To remove one: `launchctl bootout gui/$(id -u)/<name>`
+and delete its file. With FileVault on, someone must type the password after a restart.
+Hermes's browser steps still wait for a yes, and Super Dispatch, Central Dispatch and Trucking
+Office are refused by the gate.

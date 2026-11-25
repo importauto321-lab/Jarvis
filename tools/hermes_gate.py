@@ -26,6 +26,8 @@ READ_ONLY_TOOLS = {
 # Commands that only show things. No shell tricks are allowed around them.
 READ_ONLY_COMMANDS = {"ls", "cat", "head", "tail", "wc", "grep", "pwd", "date", "whoami", "uname",
                       "sw_vers", "df", "du", "stat", "which"}
+# Business sites Hermes must not touch until the owner says so. Refused, not asked.
+OFF_LIMITS = re.compile(r"super[\s_.\-]*dispatch|central[\s_.\-]*dispatch|trucking[\s_.\-]*office", re.IGNORECASE)
 MAX_SHOWN = 1500
 SHELL_TRICKS = re.compile(r"[;&|<>`\n\r\\]|\$[({]")
 SECRETS = re.compile(
@@ -58,6 +60,8 @@ def decide(tool: str, args: dict) -> dict:
     everything = json.dumps(args, sort_keys=True, default=str)
     if SECRETS.search(everything) or any(SECRETS.search(str(v)) for v in args.values()):
         return {"action": "block", "message": "Secret files and passwords are off limits."}
+    if OFF_LIMITS.search(everything):
+        return {"action": "block", "message": "Super Dispatch, Central Dispatch and Trucking Office are off limits for now."}
     # Quotes can split a secret's name ('.en''v'): check the words the shell would actually see.
     if tool == "terminal":
         try:
