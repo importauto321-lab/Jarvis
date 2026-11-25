@@ -179,6 +179,14 @@ this computer (`127.0.0.1:8642`). Jarvis reads the key from that file, or from
 `JARVIS_HERMES_TIMEOUT` (seconds, default 300). Replies are spoken with `pyttsx3`, or the
 Mac's built-in `say` voice if `pyttsx3` isn't installed.
 
+### Gemini jobs (web page)
+
+With a Gemini key, current information (rates, news, prices) goes to Gemini with Google
+Search, and **Attach** lets you send a picture, PDF, text file or audio recording (up to about 14 MB) for
+Gemini to read or transcribe, and long email threads can be sent to Gemini too. Each
+answer says when Gemini was used. Google's free limits apply, and free-tier data may be used
+by Google, so keep sensitive documents out.
+
 ### From the iPad
 
 On the web page you can just talk: with Hermes set up, Claude hands computer jobs to Hermes on

@@ -68,8 +68,8 @@
       <button class="toggle" id="forgetAll" type="button">Forget everything</button>
     </div>
     <hr>
-    <h2>YouTube videos</h2>
-    <p>A Google Gemini API key lets Jarvis watch a YouTube video you paste a link to, then summarize it or answer questions about it. It's saved only in this browser on this device. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.</p>
+    <h2>Gemini: web search, videos, documents, pictures</h2>
+    <p>A Google Gemini API key lets Jarvis search the live web for current rates, news and prices, watch YouTube videos you link, read documents, PDFs, pictures and audio you attach, and read long email threads. It's saved only in this browser on this device. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.</p>
     <p id="geminiStatus"></p>
     <div class="row">
       <input id="geminiKey" type="password" autocomplete="off" placeholder="Gemini API key" aria-label="Gemini API key">
@@ -133,7 +133,11 @@
     </div>
   </div>
 
+  <p class="attached" id="attached" hidden>Attached: <span id="attachedName"></span> <button class="toggle" id="removeAttached" type="button">Remove</button></p>
+  <input id="file" type="file" accept="image/*,application/pdf,text/plain,audio/*,.csv,.md,.m4a,.mp3,.wav" hidden>
+
   <form class="composer" id="composer">
+    <button class="toggle" id="attach" type="button" aria-label="Attach a picture, document or recording">Attach</button>
     <input id="input" type="text" autocomplete="off" enterkeyhint="send" placeholder="Or type a command" aria-label="Command">
     <button class="send" id="send" type="submit">Send</button>
   </form>
