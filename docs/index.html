@@ -11,9 +11,9 @@
 <meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
 <title>Jarvis</title>
-<link rel="stylesheet" href="app.css?v=51">
-<script src="boot.js?v=51"></script>
-<script type="module" src="app.js?v=51"></script>
+<link rel="stylesheet" href="app.css?v=52">
+<script src="boot.js?v=52"></script>
+<script type="module" src="app.js?v=52"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -68,8 +68,8 @@
       <button class="toggle" id="forgetAll" type="button">Forget everything</button>
     </div>
     <hr>
-    <h2>YouTube videos</h2>
-    <p>A Google Gemini API key lets Jarvis watch a YouTube video you paste a link to, then summarize it or answer questions about it. It's saved only in this browser on this device. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.</p>
+    <h2>Gemini: web search, videos, documents, pictures</h2>
+    <p>A Google Gemini API key lets Jarvis search the live web for current rates, news and prices, watch YouTube videos you link, read documents, PDFs, pictures and audio you attach, and read long email threads. It's saved only in this browser on this device. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.</p>
     <p id="geminiStatus"></p>
     <div class="row">
       <input id="geminiKey" type="password" autocomplete="off" placeholder="Gemini API key" aria-label="Gemini API key">
@@ -83,7 +83,7 @@
     <p id="locationStatus"></p>
     <hr>
     <h2>Hermes (your computer)</h2>
-    <p>Say "ask Hermes to..." and Jarvis sends the task to Hermes on your own computer, then reads the answer. This device needs Tailscale on, and the computer must be awake with Hermes open. With the ask-first gate installed on that computer, Hermes waits before it deletes, sends, pays or changes anything, and Jarvis shows you the request to tap Yes or No. It is a safety net, not a guarantee. Hermes can run commands on that computer, so treat its key like a password.</p>
+    <p>Just talk to Jarvis: when a job needs your computer, he sends it to Hermes there and tells you the result. (You can still say "ask Hermes to...".) If email, calendar or web text is part of the conversation, he asks before sending a job. This device needs Tailscale on, and the computer must be awake with Hermes open. With the ask-first gate installed on that computer, Hermes waits before it deletes, sends, pays or changes anything, and Jarvis shows you the request to tap Yes or No. It is a safety net, not a guarantee. Hermes can run commands on that computer, so treat its key like a password.</p>
     <p id="hermesStatus"></p>
     <div class="row">
       <input id="hermesUrl" type="text" autocomplete="off" autocapitalize="off" placeholder="https://your-computer.your-network.ts.net" aria-label="Hermes address">
@@ -111,7 +111,7 @@
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
     <p>Removes your Anthropic key, Gemini key, Hermes address and key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 51 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Page version 52 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">
@@ -133,7 +133,11 @@
     </div>
   </div>
 
+  <p class="attached" id="attached" hidden>Attached: <span id="attachedName"></span> <button class="toggle" id="removeAttached" type="button">Remove</button></p>
+  <input id="file" type="file" accept="image/*,application/pdf,text/plain,audio/*,.csv,.md,.m4a,.mp3,.wav" hidden>
+
   <form class="composer" id="composer">
+    <button class="toggle" id="attach" type="button" aria-label="Attach a picture, document or recording">Attach</button>
     <input id="input" type="text" autocomplete="off" enterkeyhint="send" placeholder="Or type a command" aria-label="Command">
     <button class="send" id="send" type="submit">Send</button>
   </form>
