@@ -49,13 +49,27 @@ Each step is finished only when its test passes on the real device.
 |---|---|---|---|
 | 0 | Prove what is built | On the iPad: Hermes job, Gemini search, ChatGPT second opinion, email attachment, one browser job with approval | Run five sentences |
 | 1 | Try the Claude app you already pay for (1 hour) | One spreadsheet made from the phone; note whether Dispatch is offered | Open the Claude app |
-| 2 | Phone channel: Hermes on Telegram | Voice memo from the phone gets an answer; an approval prompt arrives and "no" stops the job; only your account can talk to it | Create the bot, paste its token at a hidden prompt |
-| 3 | Files to phone | "Make a spreadsheet of our trucks and trailers" arrives as .xlsx and opens | Open it |
-| 4 | Scheduled work | A morning message arrives two days in a row: today's calendar, emails needing you, expiring registrations | Pick the time |
-| 5 | Gmail, Calendar, Drive for Hermes, one at a time | Reads and drafts only; sending still asks | Sign in to Google and click Allow |
-| 6 | Finding loads | A daily list matching your routes, rate and what the trailers can carry; you book | Routes, lowest rate, empty weights; ask each load board what it allows |
-| 7 | Business tools | Quotes, invoice follow-ups, as drafts | Approve each send |
-| 8 | Calls and texts (last) | Only after 0-7 run for two weeks | Approve cost first |
+| 2 | Lock down and back up the iMac first | Time Machine backup made and one file restored; screen locks when idle; you know how to stop Hermes; a missed morning job gets noticed | Plug in a backup drive |
+| 3 | Phone channel: Hermes on Telegram | Voice memo from the phone gets an answer; an approval prompt arrives and "no" stops the job; only your account can talk to it | Create the bot, paste its token at a hidden prompt |
+| 4 | Files to phone | "Make a spreadsheet of our trucks and trailers" arrives as .xlsx and opens | Open it |
+| 5 | Scheduled work | A morning message arrives two days in a row: today's calendar, emails needing you, expiring registrations | Pick the time |
+| 6 | Write down what Hermes may read and keep; then Gmail, Calendar, Drive, one at a time | Reads and drafts only; sending still asks | Sign in to Google and click Allow |
+| 7 | Finding loads | A daily list matching your routes, rate and what the trailers can carry; you book | Routes, lowest rate, empty weights; ask each load board what it allows |
+| 8 | Business tools | Quotes, invoice follow-ups, as drafts | Approve each send |
+| 9 | Calls and texts (last) | Only after 0-8 run for two weeks | Approve cost first |
+
+## Second opinion (ChatGPT, 11/25/2026)
+
+It agreed with not buying or switching yet. It warned that Telegram is a weak place for approvals,
+customer information and business files: if the bot token or chat is exposed, someone could send jobs
+or read files. It also asked for backups and lock-down first, said shared memory is not simple, and said
+AI costs can exceed the estimate. Changes made: backups and lock-down moved before Telegram.
+
+**Telegram limits:** only your account may talk to the bot; no customer details, VINs, banking or
+sensitive files through it (those stay on the private Tailscale connection); if that is not acceptable,
+skip step 3 and keep to the iPad page.
+
+Shared memory: not promised. Until then, a shared notes file is the realistic version.
 
 ## Rules for every step
 
