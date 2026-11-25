@@ -14,7 +14,7 @@ def action(tool, **args):
     return hermes_gate.decide(tool, args).get("action", "allow")
 
 
-@pytest.mark.parametrize("command", ["ls -la /tmp", "cat notes.txt", "grep -r load .", "date"])
+@pytest.mark.parametrize("command", ["ls -la /tmp", "cat notes.txt", "grep -n load notes.txt", "date"])
 def test_looking_is_allowed(command):
     assert action("terminal", command=command) == "allow"
 
@@ -66,3 +66,19 @@ def test_the_owner_sees_the_whole_command_or_it_is_refused():
     assert hermes_gate.decide("terminal", {"command": "echo " + "a" * 2000})["action"] == "block"
     long_write = hermes_gate.decide("write_file", {"path": "/tmp/n.txt", "content": "z" * 5000})
     assert long_write["action"] == "approve" and "/tmp/n.txt" in long_write["message"]
+
+
+@pytest.mark.parametrize("command", ["cat .env_backup", "cat /x/.environment", "cat .en''v", 'cat "/Users/a/project/.e"nv'])
+def test_secret_names_cannot_be_dodged(command):
+    assert action("terminal", command=command) == "block"
+
+
+@pytest.mark.parametrize("command", ["cat /Users/a/.hermes/.e*", "cat .e?v", "cat .{e,}nv", "grep -r sk- /Users/a",
+                                     "grep -Rn key .", "grep --recursive key .", "ls /Users/a/.hermes"])
+def test_wildcards_and_recursive_searches_ask(command):
+    assert action("terminal", command=command) == "approve"
+
+
+def test_hermes_folder_needs_a_yes():
+    assert action("search_files", path="/Users/a/.hermes", pattern="key") == "approve"
+    assert action("read_file", path="/Users/a/.hermes/config.yaml") == "approve"

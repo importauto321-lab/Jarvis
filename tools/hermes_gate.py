@@ -30,7 +30,7 @@ MAX_SHOWN = 1500
 SHELL_TRICKS = re.compile(r"[;&|<>`\n\r\\]|\$[({]")
 SECRETS = re.compile(
     r"\.hermes/(\.env|auth\.json|google_token|google_client_secret|shell-hooks-allowlist)|"
-    r"(^|[/\s'\"=])\.env(\b|$)|find-(generic|internet)-password|dump-keychain|Keychains/|\.ssh/|"
+    r"(^|[/\s'\"=])\.env|find-(generic|internet)-password|dump-keychain|Keychains/|\.ssh/|"
     r"jarvis-openai|Hermes-for-iPad")
 
 
@@ -41,7 +41,15 @@ def is_read_only_command(command: str) -> bool:
         words = shlex.split(command)
     except ValueError:
         return False
-    return bool(words) and words[0] in READ_ONLY_COMMANDS
+    if not words or words[0] not in READ_ONLY_COMMANDS:
+        return False
+    # Wildcards can name a secret file without spelling it, and a recursive search can read one: ask.
+    if any(c in command for c in "*?[{"):
+        return False
+    if words[0] == "grep" and any(w == "--recursive" or w == "--dereference-recursive"
+                                  or (w.startswith("-") and not w.startswith("--") and ("r" in w or "R" in w)) for w in words[1:]):
+        return False
+    return not any(SECRETS.search(w) or ".hermes" in w for w in words[1:])
 
 
 def decide(tool: str, args: dict) -> dict:
@@ -50,7 +58,16 @@ def decide(tool: str, args: dict) -> dict:
     everything = json.dumps(args, sort_keys=True, default=str)
     if SECRETS.search(everything) or any(SECRETS.search(str(v)) for v in args.values()):
         return {"action": "block", "message": "Secret files and passwords are off limits."}
-    if tool in READ_ONLY_TOOLS:
+    # Quotes can split a secret's name ('.en''v'): check the words the shell would actually see.
+    if tool == "terminal":
+        try:
+            if any(SECRETS.search(w) for w in shlex.split(str(args.get("command", "")))):
+                return {"action": "block", "message": "Secret files and passwords are off limits."}
+        except ValueError:
+            pass
+    # Hermes's own folder holds its keys: reading or searching there needs a yes.
+    in_hermes = tool in {"read_file", "search_files"} and ".hermes" in everything
+    if tool in READ_ONLY_TOOLS and not in_hermes:
         return {}
     if tool == "terminal" and not args.get("background") and is_read_only_command(str(args.get("command", ""))):
         return {}
