@@ -125,3 +125,13 @@ def test_other_browser_tools_and_commands_still_ask_each_time():
     for tool, args in [("browser_cdp", {"method": "x"}), ("browser_vault", {}), ("terminal", {"command": "rm a"}),
                        ("browser_exec", {"code": "print(1)", "local": True})]:
         assert hermes_gate.decide(tool, args).get("rule_key") != hermes_gate.BROWSER_JOB_KEY
+
+
+def test_each_click_needs_its_own_comment():
+    key = hermes_gate.BROWSER_JOB_KEY
+    ask = lambda code: hermes_gate.decide("browser_exec", {"code": code}).get("rule_key")
+    assert ask("# harmless note\nx = 1\nclick_at_xy(1, 2)") != key
+    assert ask("# Click the Next link\nclick_at_xy(1, 2)\nclick_at_xy(3, 4)") != key
+    assert ask("#\nclick_at_xy(1, 2)") != key
+    assert ask("# Click the Next link\nclick_at_xy(1, 2)\n# Open the Docs tab\nclick_at_xy(3, 4)") == key
+    assert ask("click_at_xy(1, 2)  # open the menu") == key

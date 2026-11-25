@@ -82,9 +82,20 @@ def is_ordinary_browsing(code: str) -> bool:
     for target in re.findall(r"capture_screenshot\s*\(\s*(?:path\s*=\s*)?([^,)]*)", code):
         if target.strip() and not re.fullmatch(r"""['"][^'"]+\.png['"]|full\s*=.*|max_dim\s*=.*""", target.strip()):
             return False
-    # A click has to be explained in a comment, so there are words to judge it by.
-    if re.search(r"click", code, re.IGNORECASE) and not any(line.strip().startswith("#") for line in code.splitlines()):
-        return False
+    return every_click_is_explained(code)
+
+
+def every_click_is_explained(code: str) -> bool:
+    """Each line that clicks needs a comment right above it (or on it), so there are words to judge it by."""
+    previous = ""
+    for line in (part.strip() for part in code.splitlines()):
+        if not line:
+            continue
+        if not line.startswith("#") and re.search(r"click", line, re.IGNORECASE):
+            note = previous if previous.startswith("#") else line.partition("  #")[2]
+            if len(re.findall(r"[A-Za-z]{2,}", note)) < 2:
+                return False
+        previous = line
     return True
 
 
