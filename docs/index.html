@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- Only Anthropic, Google, the weather and place services, and the owner's own Tailscale network (Hermes) can be reached; nothing else may load or run. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src https://api.anthropic.com https://generativelanguage.googleapis.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.bigdatacloud.net https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.taila998e7.ts.net; frame-src https://accounts.google.com/gsi/; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<!-- Only Anthropic, Google, OpenAI (ChatGPT), the weather and place services, and the owner's own Tailscale network (Hermes) can be contacted. Pictures and sound come only from this page or from files made here (data: and blob: addresses). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data: blob:; connect-src https://api.anthropic.com https://generativelanguage.googleapis.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.bigdatacloud.net https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.taila998e7.ts.net https://api.openai.com; frame-src https://accounts.google.com/gsi/; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -11,9 +11,9 @@
 <meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d131a" media="(prefers-color-scheme: dark)">
 <title>Jarvis</title>
-<link rel="stylesheet" href="app.css?v=52">
-<script src="boot.js?v=52"></script>
-<script type="module" src="app.js?v=52"></script>
+<link rel="stylesheet" href="app.css?v=53">
+<script src="boot.js?v=53"></script>
+<script type="module" src="app.js?v=53"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -78,6 +78,15 @@
     </div>
     <label class="check"><input id="geminiHearing" type="checkbox"> Use Gemini to hear me when I tap the circle. Much more reliable on iPad than Safari's own listening. Your voice recordings are sent to Google to be written down.</label>
     <hr>
+    <h2>ChatGPT</h2>
+    <p>An OpenAI key lets Jarvis get ChatGPT's second opinion (he usually does for decisions about real money; say "check it with ChatGPT" to be sure), check work and code, write, do math, and make pictures and voice recordings. It's saved only in this browser. Every use costs OpenAI credit, so keep auto-recharge off. Paste the key one time.</p>
+    <p id="openaiStatus"></p>
+    <div class="row">
+      <input id="openaiKey" type="password" autocomplete="off" placeholder="OpenAI key (sk-...)" aria-label="OpenAI API key">
+      <button class="send" id="saveOpenai" type="button">Save key</button>
+      <button class="toggle" id="clearOpenai" type="button">Remove key</button>
+    </div>
+    <hr>
     <h2>Location</h2>
     <label class="check"><input id="useLocation" type="checkbox"> Use my location. Jarvis checks where you are only when a question needs it (weather here, what's nearby, how far), and sends it to Claude with that question. Every few hours, when you talk to him, he also gives you a quick weather heads-up.</label>
     <p id="locationStatus"></p>
@@ -110,8 +119,8 @@
     <div class="row">
       <button class="toggle" id="clearAll" type="button">Clear all keys</button>
     </div>
-    <p>Removes your Anthropic key, Gemini key, Hermes address and key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
-    <p>Page version 52 · <a href="privacy.html">Privacy policy</a></p>
+    <p>Removes your Anthropic key, ChatGPT key, Gemini key, Hermes address and key, Google client ID and Google sign-in from this device, and ends the conversation.</p>
+    <p>Page version 53 · <a href="privacy.html">Privacy policy</a></p>
   </section>
 
   <div class="orb-wrap">

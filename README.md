@@ -179,6 +179,13 @@ this computer (`127.0.0.1:8642`). Jarvis reads the key from that file, or from
 `JARVIS_HERMES_TIMEOUT` (seconds, default 300). Replies are spoken with `pyttsx3`, or the
 Mac's built-in `say` voice if `pyttsx3` isn't installed.
 
+### ChatGPT jobs (web page)
+
+Add an OpenAI key under **Settings -> ChatGPT** for second opinions (including decisions about
+real money), double-checking, code, writing, math, new or edited pictures, and voice
+recordings. These need an OpenAI account that offers the models; Jarvis says when he used it. Each use costs OpenAI credit. Whether something counts
+as a money decision is Claude's judgment (helped by a simple word check), so say "check it with ChatGPT" when it matters.
+
 ### Gemini jobs (web page)
 
 With a Gemini key, current information (rates, news, prices) goes to Gemini with Google
