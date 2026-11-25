@@ -88,3 +88,22 @@ class VoiceSpeaker:
         print(f"{self.name}: {text}")
         self.engine.say(text)
         self.engine.runAndWait()
+
+
+class MacSaySpeaker:
+    """Speaks with the built-in macOS ``say`` command (no installs needed), and echoes to the console."""
+
+    def __init__(self, name: str = "Jarvis", rate: int = 180) -> None:
+        import shutil
+
+        self.say_cmd = shutil.which("say")
+        if not self.say_cmd:
+            raise RuntimeError("the macOS say command was not found")
+        self.name = name
+        self.rate = rate
+
+    def say(self, text: str) -> None:
+        import subprocess
+
+        print(f"{self.name}: {text}")
+        subprocess.run([self.say_cmd, "-r", str(self.rate), "--", text], check=False)

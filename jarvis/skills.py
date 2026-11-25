@@ -18,6 +18,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 
+from . import hermes
 from .config import Config
 from .speech import Speaker
 
@@ -83,6 +84,22 @@ def run_skills(ctx: Context, command: str) -> Optional[str]:
 @skill("exit", r"^(good ?bye|bye|exit|quit|stop listening|shut ?down|go to sleep)\b", "say goodbye to end the session")
 def _exit(ctx: Context, m: "re.Match[str]") -> str:
     raise Exit("Goodbye. Call me if you need anything.")
+
+
+@skill("hermes", r"^(?:please )?(?:ask|tell|have|get|let) hermes (?:to |that |about |if |whether )?(.+)$",
+       "send a task to Hermes")
+def _hermes(ctx: Context, m: "re.Match[str]") -> str:
+    task = m.group(1).strip()
+    ctx.speaker.say("Sending that to Hermes.")
+    try:
+        full = hermes.ask(task, url=ctx.config.hermes_url, timeout=ctx.config.hermes_timeout)
+    except hermes.HermesError as exc:
+        return str(exc)
+    spoken, shortened = hermes.speakable(full)
+    if shortened:
+        print(f"\n--- Hermes's full answer ---\n{full}\n----------------------------\n")
+        spoken += " The full answer is on the screen."
+    return spoken
 
 
 @skill("greeting", r"^(hi|hello|hey|good (morning|afternoon|evening))\b", "say hello")

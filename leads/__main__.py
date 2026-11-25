@@ -109,9 +109,14 @@ def main(argv=None) -> int:
         print(doctor.report())
     elif args.cmd == "check":
         if not args.live:
-            print("Dry run: nothing sent. Add --live (uses free Gemini; needs GEMINI_API_KEY)."); return 0
+            print("Dry run: nothing sent. Add --live (free Gemini needs GEMINI_API_KEY; add --openai for ChatGPT, needs OPENAI_API_KEY)."); return 0
         text = open(args.file, encoding="utf-8").read()
-        print(checker.second_opinion(text) if args.openai else checker.second_opinion_gemini(text))
+        if args.openai:
+            import json as _j
+            cfg = drafts.SETTINGS.exists() and _j.loads(drafts.SETTINGS.read_text(encoding="utf-8")) or {}
+            print(checker.second_opinion(text, model=cfg.get("openai_model") or "gpt-4o-mini"))
+        else:
+            print(checker.second_opinion_gemini(text))
     elif args.cmd == "rank":
         rows = ranking.rank(store.load()); store.save(rows)
         for r in rows:

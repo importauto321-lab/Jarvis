@@ -19,7 +19,8 @@ One agent, three sections. Each section only DRAFTS or SUGGESTS. Nothing is sent
 Ask it for a second opinion before: a demand letter goes out, a quote far from your rate, or any big money decision.
 It only reviews text you give it, and answers "agree / disagree and why". It never acts.
 Needs an OpenAI key (platform.openai.com, $5 credit, auto-recharge OFF). Key goes in a file or environment
-variable at home, never in chat or email. Code for this is written on Day 6.
+variable at home, never in chat or email. Try it: `python -m leads check draft.txt --live --openai`
+(without `--openai` it uses the free Gemini checker). The model comes from `openai_model` in settings.json.
 
 ## Load boards
 `boards.py` is OFF. Today: export or copy loads to a CSV and run `python -m leads loads loads.csv`.

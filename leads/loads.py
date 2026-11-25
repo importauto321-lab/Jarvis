@@ -4,6 +4,7 @@ Central Dispatch). It does not log in to or scrape any board. See boards.py.
 Loads CSV columns: id, source, pickup, dropoff, miles, price, vehicle, pickup_date (YYYY-MM-DD).
 pickup/dropoff look like "Dallas, TX".
 """
+from __future__ import annotations
 import csv
 from datetime import datetime
 

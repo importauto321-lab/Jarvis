@@ -4,6 +4,7 @@ Inputs come from a JSON file (calendar, emails, ideas, watch, revenue_yesterday)
 Calendar and Trucking Office access is plugged in at the house, boss/sample/inputs.json is used and the
 briefing is stamped SAMPLE DATA. The draft counts come from the business agent's own folders.
 """
+from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path

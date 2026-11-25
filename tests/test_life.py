@@ -130,3 +130,22 @@ def test_gemini_checker_default(monkeypatch):
         checker.second_opinion_gemini("hi")
     fake = _fake('VERDICT: disagree')
     assert checker.second_opinion_gemini("hi", key="k", post=fake) == "VERDICT: disagree"
+
+
+def test_openai_checker_friendly_errors(monkeypatch):
+    import urllib.error
+    from leads import checker
+
+    def boom(code):
+        def f(req, timeout=0):
+            raise urllib.error.HTTPError("u", code, "x", {}, None)
+        return f
+    with pytest.raises(SystemExit) as e:
+        checker.second_opinion("hi", key="k", post=boom(401))
+    assert "key is wrong" in str(e.value)
+    with pytest.raises(SystemExit) as e:
+        checker.second_opinion("hi", key="k", post=boom(429))
+    assert "credit" in str(e.value)
+    with pytest.raises(SystemExit) as e:
+        checker.second_opinion("hi", key="k", post=_fake_openai("x").__class__ and (lambda req, timeout=0: io.BytesIO(b"{}")))
+    assert "did not expect" in str(e.value)

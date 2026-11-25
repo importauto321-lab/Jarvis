@@ -1,5 +1,6 @@
 """Delivery drafts: email to Nicole and Kaysha, email to the owner, a short text. NOTHING IS SENT HERE.
 Each function writes a file you can read, then send yourself (or approve in Jarvis). Texting stays OFF until set up."""
+from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
