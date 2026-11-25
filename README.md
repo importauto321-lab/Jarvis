@@ -181,6 +181,12 @@ this computer (`127.0.0.1:8642`). Jarvis reads the key from that file, or from
 `JARVIS_HERMES_TIMEOUT` (seconds, default 300). Replies are spoken with `pyttsx3`, or the
 Mac's built-in `say` voice if `pyttsx3` isn't installed.
 
+### Email attachments (web page)
+
+With Gmail connected, ask about an email and Jarvis opens its attached PDFs, pictures and text
+files and answers from them (up to 6 files; Word and Excel files aren't read). Read only. The
+file contents go to Anthropic.
+
 ### ChatGPT jobs (web page)
 
 Add an OpenAI key under **Settings -> ChatGPT** for second opinions (including decisions about
