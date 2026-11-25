@@ -1327,6 +1327,8 @@ const OPENAI_IMAGE = ["gpt-image-1-mini", "gpt-image-1.5", "gpt-image-1"];
 const OPENAI_TTS = ["gpt-4o-mini-tts", "tts-1"];
 const OPENAI_MEDIA_PER_ANSWER = 2; // pictures or voice clips: a runaway request can't keep spending
 const MONEY_DECISION_RE = /\b(should (i|we)|is it worth|can (i|we) afford)\b.*(\$|\d|\b(buy|sell|pay|invest|spend|borrow|loan|lease|finance|hire|price|charge|quote|deal|money|cost)\b)/i;
+// Keys, "password: ...", card numbers and bank account or routing numbers never go to ChatGPT.
+const SENSITIVE_RE = /sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|\b(password|passcode|pin|cvv|cvc)\s*(is|:|=)\s*\S+|\b(?:\d[ -]?){15,16}\b|\b(routing|account)\s*(number|#|no\.?)\s*(is|:|=)?\s*\d{6,}/i;
 let openaiModels = null;
 let chatgptJobs = [];   // what ChatGPT did for this answer, shown under it
 let chatgptMedia = 0;
@@ -1476,7 +1478,7 @@ const GOOGLE_TOOLS = [
       const ask = String(request || "").trim();
       if (!ask) throw new Error("The request is empty.");
       const body = (ask + (material ? "\n\n--- material ---\n" + String(material) : "")).slice(0, 60000);
-      if (/sk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY/.test(body)) throw new Error("That contains a key. It was not sent.");
+      if (SENSITIVE_RE.test(body)) throw new Error("That looks like it contains a key, password, card or account number, so it was not sent. Tell the user to remove it.");
       addMsg("bot", "Sending to ChatGPT: " + (ask.length > 200 ? ask.slice(0, 197) + "..." : ask));
       const model = await openaiModel(OPENAI_TEXT);
       const data = await openaiJson("chat/completions", { model, messages: [
