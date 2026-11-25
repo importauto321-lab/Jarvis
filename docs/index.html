@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- Only Anthropic, Google, OpenAI (ChatGPT), the weather and place services, and the owner's own Tailscale network (Hermes) can be reached; nothing else may load or run. -->
+<!-- Only Anthropic, Google, OpenAI (ChatGPT), the weather and place services, and the owner's own Tailscale network (Hermes) can be contacted. Pictures and sound come only from this page or from files made here (data: and blob: addresses). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data: blob:; connect-src https://api.anthropic.com https://generativelanguage.googleapis.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.bigdatacloud.net https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com/gsi/ https://*.taila998e7.ts.net https://api.openai.com; frame-src https://accounts.google.com/gsi/; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -79,7 +79,7 @@
     <label class="check"><input id="geminiHearing" type="checkbox"> Use Gemini to hear me when I tap the circle. Much more reliable on iPad than Safari's own listening. Your voice recordings are sent to Google to be written down.</label>
     <hr>
     <h2>ChatGPT</h2>
-    <p>An OpenAI key lets Jarvis get ChatGPT's second opinion (he tries to for every decision about real money; say "check it with ChatGPT" to be sure), check work and code, write, do math, and make pictures and voice recordings. It's saved only in this browser. Every use costs OpenAI credit, so keep auto-recharge off. Paste the key one time.</p>
+    <p>An OpenAI key lets Jarvis get ChatGPT's second opinion (he usually does for decisions about real money; say "check it with ChatGPT" to be sure), check work and code, write, do math, and make pictures and voice recordings. It's saved only in this browser. Every use costs OpenAI credit, so keep auto-recharge off. Paste the key one time.</p>
     <p id="openaiStatus"></p>
     <div class="row">
       <input id="openaiKey" type="password" autocomplete="off" placeholder="OpenAI key (sk-...)" aria-label="OpenAI API key">

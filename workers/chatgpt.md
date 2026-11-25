@@ -1,5 +1,5 @@
 # ChatGPT
-Wired in: code checker on the iMac, and all seven on the iPad page (version 53). Not yet tried on the iPad.
+Wired in: code checker on the iMac, and all seven on the iPad page (version 53). Not yet tried on the iPad. Needs OpenAI credit and model access.
 
 ## Does well
 - A second opinion on big decisions and plans.
