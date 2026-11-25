@@ -145,3 +145,7 @@ input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); ou
 
 .attached { margin: 0; padding: 4px 16px; font-size: 0.9rem; display: flex; gap: 8px; align-items: center; }
 .attached[hidden] { display: none; }
+
+.msg.media img { display: block; max-width: 100%; border-radius: 10px; margin-top: 8px; }
+.msg.media audio { display: block; width: 100%; margin-top: 8px; }
+.msg.media a { display: inline-block; margin-top: 6px; }
