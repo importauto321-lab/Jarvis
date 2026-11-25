@@ -12,7 +12,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Callable, Optional, Tuple
@@ -23,9 +25,9 @@ DEFAULT_ENV_FILE = Path.home() / ".hermes" / ".env"
 INSTRUCTIONS = (
     "A voice assistant named Jarvis is passing you a task from its owner. Your reply will be read "
     "aloud, so finish with one to three short, plain spoken sentences: no markdown, bullet points, "
-    "code, or links. Draft only: never send a message or email, spend or move money, post, book, "
-    "or delete anything, and never change settings, without the owner's clear OK. If a step needs "
-    "approval, say so briefly and stop. Never invent facts; say what you could not do."
+    "code, or links. The system pauses and asks the owner before anything that deletes, sends, pays, "
+    "or changes something. If the owner says no or it is refused, do not try another way; say so. "
+    "Never invent facts; say what you could not do."
 )
 
 
@@ -48,37 +50,85 @@ def read_key(env_file: Optional[Path] = None) -> str:
     return ""
 
 
-def ask(task: str, url: str = "", key: str = "", timeout: float = 300, post: Optional[Callable] = None) -> str:
-    """Send ``task`` to Hermes and return its full text answer."""
+def ask(task: str, url: str = "", key: str = "", timeout: float = 300,
+        approve: Optional[Callable[[str], bool]] = None, post: Optional[Callable] = None,
+        sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> str:
+    """Send ``task`` to Hermes and return its answer.
+
+    When Hermes wants to do something risky it waits; ``approve(description)`` must return True for it
+    to go ahead, once. With no ``approve``, or on any doubt, the answer is no.
+    """
     url = (url or os.environ.get("JARVIS_HERMES_URL", "") or DEFAULT_URL).rstrip("/")
     key = key or read_key()
     if not key:
         raise HermesError("I can't reach Hermes because its key isn't set up yet.")
-    body = json.dumps({
-        "model": "hermes-agent",
-        "messages": [{"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": task}],
-        "stream": False,
-    }).encode()
-    req = urllib.request.Request(url + "/v1/chat/completions", body,
-                                 {"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-    try:
-        with (post or urllib.request.urlopen)(req, timeout=timeout) as r:
-            data = json.load(r)
-        choice = data["choices"][0]
-        text = (choice["message"]["content"] or "").strip()
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            raise HermesError("Hermes turned down my key. Check the key in the Hermes settings file.")
-        raise HermesError(f"Hermes returned error {e.code}.")
-    except urllib.error.URLError:
-        raise HermesError("I can't reach Hermes. Open the Hermes app and try again.")
-    except (TimeoutError, OSError):
-        raise HermesError("Hermes is taking too long. It may still be working on it.")
-    except (KeyError, IndexError, ValueError, TypeError):
+
+    def call(path: str, body: Optional[dict] = None) -> dict:
+        req = urllib.request.Request(url + path, None if body is None else json.dumps(body).encode(),
+                                     {"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+        try:
+            with (post or urllib.request.urlopen)(req, timeout=30) as r:
+                data = json.load(r)
+            if not isinstance(data, dict):
+                raise ValueError("not an object")
+            return data
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise HermesError("Hermes turned down my key. Check the key in the Hermes settings file.")
+            raise HermesError(f"Hermes returned error {e.code}.")
+        except urllib.error.URLError:
+            raise HermesError("I can't reach Hermes. Open the Hermes app and try again.")
+        except (TimeoutError, OSError):
+            raise HermesError("Hermes stopped answering. It may still be working on it.")
+        except (ValueError, TypeError):
+            raise HermesError("Hermes answered in a form I didn't expect.")
+
+    run_id = call("/v1/runs", {"input": task, "instructions": INSTRUCTIONS}).get("run_id")
+    if not run_id:
         raise HermesError("Hermes answered in a form I didn't expect.")
-    if choice.get("finish_reason") in ("error", "cancelled"):
-        raise HermesError("Hermes couldn't finish that task.")
-    return text or "Hermes finished but had nothing to say."
+    run_path = "/v1/runs/" + urllib.parse.quote(str(run_id), safe="")
+    answered: set = set()
+    deadline = clock() + timeout
+    while clock() < deadline:
+        state = call(run_path)
+        status = state.get("status")
+        if status == "completed":
+            return str(state.get("output") or "").strip() or "Hermes finished but had nothing to say."
+        if status in ("failed", "cancelled", "interrupted", "unknown"):
+            raise HermesError("Hermes couldn't finish that task.")
+        if status == "waiting_for_approval":
+            for item in pending_approvals(state):
+                prompt = item.get("prompt_id") or item.get("description") or ""
+                if prompt in answered:
+                    continue
+                answered.add(prompt)
+                asked_at = clock()
+                yes = bool(approve and approve(what_is_asked(item)))
+                deadline += clock() - asked_at  # time spent deciding doesn't count
+                body = {"choice": "once" if yes else "deny"}
+                if item.get("prompt_id"):
+                    body.update(request_id=item["prompt_id"], execution_generation=item.get("execution_generation"))
+                call(run_path + "/approval", body)
+        sleep(1)
+    try:
+        call(run_path + "/stop", {})
+    except HermesError:
+        pass
+    raise HermesError("Hermes took too long, so I told it to stop.")
+
+
+def what_is_asked(item: dict) -> str:
+    """The reason plus the actual command, so a yes is never given without seeing it."""
+    reason, command = str(item.get("description") or ""), str(item.get("command") or "")
+    if command and not command.startswith("<") and command not in reason:
+        reason = f"{reason}: {command}" if reason else command
+    return reason or "something it did not describe"
+
+
+def pending_approvals(state: dict) -> list:
+    """The permission requests in a run's status."""
+    items = state.get("pending_controls") or ([state["approval"]] if state.get("approval") else [])
+    return [i for i in items if isinstance(i, dict) and i.get("kind", "approval") == "approval"]
 
 
 _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")

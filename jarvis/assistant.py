@@ -18,6 +18,7 @@ class Assistant:
         self.speaker = speaker
         self.brain = brain
         self.context = context or Context(config=config, speaker=speaker)
+        self.context.confirm = self.confirm
         self._wake = re.compile(rf"^\W*(?:hey |ok |okay )?{re.escape(config.wake_word)}\b[\s,.!?]*", re.IGNORECASE)
 
     def strip_wake_word(self, utterance: str) -> Optional[str]:
@@ -26,6 +27,15 @@ class Assistant:
         if match:
             return utterance[match.end():].strip()
         return None if self.config.require_wake_word else utterance.strip()
+
+    def confirm(self, question: str) -> bool:
+        """Ask a yes or no question. Only a clear yes counts; silence or anything else is no."""
+        self.speaker.say(question)
+        reply = self.listener.listen() if self.listener else None
+        words = re.sub(r"[^a-z ]", " ", (reply or "").lower()).split()
+        if words[:1] == [self.config.wake_word.lower()]:
+            words = words[1:]
+        return " ".join(words) in {"yes", "yes allow it", "yes do it", "yes go ahead", "allow it"}
 
     def respond(self, command: str) -> str:
         """Produce a reply for a command. Raises ``Exit`` when the user says goodbye."""

@@ -1773,38 +1773,118 @@ const HERMES_RE = new RegExp(
   "[\\s,.:;!?-]*(?:an? (?:text|message|task)(?: message)?\\b[\\s,:]*)?(?:(?:saying|that says|to say|to|that|about|if|whether)\\b[\\s,:]*)?(.*)$", "i");
 const HERMES_ADDRESS_RE = /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.ts\.net$/;
 const HERMES_TIMEOUT_MS = 300000;
+const HERMES_POLL_MS = 1000;
+const HERMES_DECIDE_MS = 240000; // no tap on a permission request in this time: the answer is no
 const HERMES_INSTRUCTIONS =
   "A voice assistant named Jarvis is passing you a task from its owner. Your reply will be read aloud, so finish with " +
-  "one to three short, plain spoken sentences: no markdown, bullet points, code, or links. Draft only: never send a " +
-  "message or email, spend or move money, post, book, or delete anything, and never change settings, without the " +
-  "owner's clear OK. If a step needs approval, say so briefly and stop. Never invent facts; say what you could not do.";
+  "one to three short, plain spoken sentences: no markdown, bullet points, code, or links. The system pauses and asks " +
+  "the owner before anything that deletes, sends, pays, or changes something. If the owner says no or it is refused, " +
+  "do not try another way; say so. Never invent facts; say what you could not do.";
 
-async function askHermes(task) {
-  const url = store.get("hermesUrl"), key = store.get("hermesKey");
-  if (!url || !key) return { ok: false, text: "Hermes isn't set up on this device. Add its address and key in Settings." };
+class HermesError extends Error {}
+
+async function hermesCall(url, key, path, body) {
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), HERMES_TIMEOUT_MS);
+  const timer = setTimeout(() => abort.abort(), 30000);
   try {
-    const res = await fetch(url + "/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify({ model: "hermes-agent", stream: false,
-        messages: [{ role: "system", content: HERMES_INSTRUCTIONS }, { role: "user", content: task }] }),
+    const res = await fetch(url + path, {
+      method: body ? "POST" : "GET",
+      headers: { Authorization: "Bearer " + key, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
       signal: abort.signal,
     });
-    if (res.status === 401) return { ok: false, text: "Hermes turned down the key. Check the Hermes key in Settings." };
-    if (!res.ok) return { ok: false, text: `Hermes returned error ${res.status}.` };
-    const choice = (await res.json())?.choices?.[0];
-    if (!choice) return { ok: false, text: "Hermes answered in a form I didn't expect." };
-    if (choice.finish_reason === "error" || choice.finish_reason === "cancelled") return { ok: false, text: "Hermes couldn't finish that task." };
-    return { ok: true, text: String(choice.message?.content || "").trim() || "Hermes finished but had nothing to say." };
-  } catch {
-    return { ok: false, text: abort.signal.aborted
-      ? "Hermes is taking too long. It may still be working on it."
-      : "I can't reach Hermes. Check that Tailscale is on, and that your computer is awake with Hermes open." };
+    if (res.status === 401) throw new HermesError("Hermes turned down the key. Check the Hermes key in Settings.");
+    if (!res.ok) throw new HermesError(`Hermes returned error ${res.status}.`);
+    return (await res.json()) || {};
+  } catch (err) {
+    if (err instanceof HermesError) throw err;
+    if (err instanceof SyntaxError) throw new HermesError("Hermes answered in a form I didn't expect.");
+    throw new HermesError("I can't reach Hermes. Check that Tailscale is on, and that your computer is awake with Hermes open.");
   } finally {
     clearTimeout(timer);
   }
+}
+
+// The reason plus the actual command, so a yes is never given without seeing it.
+function hermesAsked(item) {
+  let reason = String(item.description || "");
+  const command = String(item.command || "");
+  if (command && !command.startsWith("<") && !reason.includes(command)) reason = reason ? `${reason}: ${command}` : command;
+  return reason || "something it did not describe";
+}
+
+// approve(description) must resolve to true for a risky step to go ahead, once. Anything else is no.
+async function askHermes(task, approve) {
+  const url = store.get("hermesUrl"), key = store.get("hermesKey");
+  if (!url || !key) return { ok: false, text: "Hermes isn't set up on this device. Add its address and key in Settings." };
+  try {
+    const run = (await hermesCall(url, key, "/v1/runs", { input: task, instructions: HERMES_INSTRUCTIONS })).run_id;
+    if (!run) throw new HermesError("Hermes answered in a form I didn't expect.");
+    const path = "/v1/runs/" + encodeURIComponent(run);
+    const answered = new Set();
+    let deadline = Date.now() + HERMES_TIMEOUT_MS, misses = 0;
+    while (Date.now() < deadline) {
+      let state;
+      // The iPad drops the connection for a moment when the screen sleeps or you switch apps: try a few times.
+      try { state = await hermesCall(url, key, path); misses = 0; }
+      catch (err) { if (++misses >= 5) throw err; state = {}; }
+      if (state.status === "completed") return { ok: true, text: String(state.output || "").trim() || "Hermes finished but had nothing to say." };
+      if (["failed", "cancelled", "interrupted", "unknown"].includes(state.status)) throw new HermesError("Hermes couldn't finish that task.");
+      if (state.status === "waiting_for_approval") {
+        const items = (state.pending_controls || (state.approval ? [state.approval] : [])).filter((i) => i && (i.kind || "approval") === "approval");
+        for (const item of items) {
+          const id = item.prompt_id || item.description || "";
+          if (answered.has(id)) continue;
+          answered.add(id);
+          const askedAt = Date.now();
+          const yes = (await approve(hermesAsked(item))) === true;
+          deadline += Date.now() - askedAt; // time spent deciding doesn't count
+          const body = { choice: yes ? "once" : "deny" };
+          if (item.prompt_id) Object.assign(body, { request_id: item.prompt_id, execution_generation: item.execution_generation });
+          await hermesCall(url, key, path + "/approval", body);
+        }
+      }
+      await new Promise((r) => setTimeout(r, HERMES_POLL_MS));
+    }
+    await hermesCall(url, key, path + "/stop", {}).catch(() => {});
+    throw new HermesError("Hermes took too long, so I told it to stop.");
+  } catch (err) {
+    return { ok: false, text: err instanceof HermesError ? err.message : "Something went wrong talking to Hermes." };
+  }
+}
+
+// The whole request is on screen, and only a tap on Yes allows it: a voice nearby or a TV can't.
+function hermesPermission(what) {
+  return new Promise((resolve) => {
+    const card = addCard("Hermes is asking permission", [], "Nothing happens unless you tap Yes.");
+    const detail = document.createElement("pre");
+    detail.className = "request";
+    detail.textContent = what;
+    card.appendChild(detail);
+    const row = document.createElement("div");
+    row.className = "confirm";
+    const done = (yes) => {
+      clearTimeout(timer);
+      row.remove();
+      const note = document.createElement("span");
+      note.className = "memory-note";
+      note.textContent = yes ? "You allowed this once." : "Not allowed.";
+      card.appendChild(note);
+      resolve(yes);
+    };
+    const timer = setTimeout(() => done(false), HERMES_DECIDE_MS);
+    for (const [label, cls, yes] of [["Yes, allow once", "send", true], ["No", "toggle", false]]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = cls;
+      b.textContent = label;
+      b.onclick = (e) => { if (e.isTrusted) done(yes); };
+      row.appendChild(b);
+    }
+    card.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+    speak("Hermes needs your permission. Check the screen, then tap Yes or No.");
+  });
 }
 
 // The whole answer stays on screen; only a short, clean version is spoken.
@@ -1917,7 +1997,8 @@ async function handle(raw, { tapped = false } = {}) {
     setState("thinking", "Asking Hermes");
     const waiting = addMsg("bot pending", "Sending that to Hermes...");
     speak("Sending that to Hermes.");
-    const answer = await askHermes(forHermes[1].trim());
+    const answer = await askHermes(forHermes[1].trim(), hermesPermission);
+    log.appendChild(waiting); // keep the answer below any permission cards
     waiting.classList.remove("pending");
     waiting.textContent = answer.text;
     if (answer.ok) {

@@ -42,6 +42,8 @@ class Context:
     open_url: Callable[[str], object] = webbrowser.open
     now: Callable[[], dt.datetime] = dt.datetime.now
     timers: List[threading.Timer] = field(default_factory=list)
+    # Asks the owner yes or no. Until the assistant provides a way to ask, the answer is no.
+    confirm: Callable[[str], bool] = lambda question: False
 
 
 Handler = Callable[[Context, "re.Match[str]"], str]
@@ -86,13 +88,22 @@ def _exit(ctx: Context, m: "re.Match[str]") -> str:
     raise Exit("Goodbye. Call me if you need anything.")
 
 
+def _allow(ctx: Context, what: str) -> bool:
+    print(f"\n--- Hermes is asking permission ---\n{what}\n-----------------------------------\n")
+    short = what if len(what) <= 120 else "something long. Read it on the screen"
+    yes = ctx.confirm(f"Hermes wants permission for {short}. Say yes to allow it once, or no.")
+    ctx.speaker.say("Allowed once." if yes else "Not allowed.")
+    return yes
+
+
 @skill("hermes", r"^(?:please )?(?:ask|tell|have|get|let) hermes (?:to |that |about |if |whether )?(.+)$",
        "send a task to Hermes")
 def _hermes(ctx: Context, m: "re.Match[str]") -> str:
     task = m.group(1).strip()
     ctx.speaker.say("Sending that to Hermes.")
     try:
-        full = hermes.ask(task, url=ctx.config.hermes_url, timeout=ctx.config.hermes_timeout)
+        full = hermes.ask(task, url=ctx.config.hermes_url, timeout=ctx.config.hermes_timeout,
+                          approve=lambda what: _allow(ctx, what))
     except hermes.HermesError as exc:
         return str(exc)
     spoken, shortened = hermes.speakable(full)
