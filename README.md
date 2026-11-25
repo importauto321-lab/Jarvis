@@ -181,6 +181,10 @@ Mac's built-in `say` voice if `pyttsx3` isn't installed.
 
 ### From the iPad
 
+On the web page you can just talk: with Hermes set up, Claude hands computer jobs to Hermes on
+its own. If outside content (email, calendar, video, web) is in the conversation, it asks first.
+The computer version still needs "ask Hermes".
+
 The web page can reach Hermes over your own private Tailscale network. Install Tailscale on the
 computer and the iPad with the same account, run `tailscale serve --bg 8642` on the computer
 (keep Funnel off), and add `API_SERVER_CORS_ORIGINS=https://importauto321-lab.github.io` to
