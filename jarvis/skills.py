@@ -91,8 +91,12 @@ def _exit(ctx: Context, m: "re.Match[str]") -> str:
 def _allow(ctx: Context, what: str) -> bool:
     print(f"\n--- Hermes is asking permission ---\n{what}\n-----------------------------------\n")
     short = what if len(what) <= 120 else "something long. Read it on the screen"
-    yes = ctx.confirm(f"Hermes wants permission for {short}. Say yes to allow it once, or no.")
-    ctx.speaker.say("Allowed once." if yes else "Not allowed.")
+    whole_job = what.startswith(hermes.BROWSER_JOB_MARK)
+    if whole_job:
+        yes = ctx.confirm("Hermes needs the web browser. Say yes to allow it for this whole job, or no.")
+    else:
+        yes = ctx.confirm(f"Hermes wants permission for {short}. Say yes to allow it once, or no.")
+    ctx.speaker.say(("Allowed for this job." if whole_job else "Allowed once.") if yes else "Not allowed.")
     return yes
 
 

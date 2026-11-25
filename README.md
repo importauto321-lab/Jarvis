@@ -166,7 +166,9 @@ the full text is printed on screen.
 
 **Ask me first.** A Hermes hook (`tools/hermes_gate.py`) lets Hermes look at things on its own
 but makes it wait for your yes before anything else: deleting, sending, paying, other
-commands, writing files, code, browser actions and scheduled jobs. On the computer say "yes";
+commands, writing files, code and scheduled jobs. Browser work gets **one yes per job**; after
+that it asks again only for steps whose words look like sending, paying, deleting, posting or
+signing in. That is a guess from the words, so a click can be missed. On the computer say "yes";
 on the iPad tap **Yes**. Anything else is no. Install it by copying the script to
 `~/.hermes/agent-hooks/ask_first.py`, adding it in `~/.hermes/config.yaml` as a
 `pre_tool_call` hook with `fail_closed: true`, setting `approvals.mode: manual`, and
@@ -287,5 +289,5 @@ On the owner's iMac, two login items (set up by hand, not by this project) in `~
 (`caffeinate`, so the Mac does not sleep) and `com.jarvis.startup` (reopens Tailscale and
 Hermes at login and every 10 minutes). To remove one: `launchctl bootout gui/$(id -u)/<name>`
 and delete its file. With FileVault on, someone must type the password after a restart.
-Hermes's browser steps still wait for a yes, and Super Dispatch, Central Dispatch and Trucking
+Hermes's browser needs one yes per job, and Super Dispatch, Central Dispatch and Trucking
 Office are refused by the gate: any request that merely mentions them, on purpose.

@@ -93,3 +93,35 @@ def test_hermes_folder_needs_a_yes():
 ])
 def test_business_sites_are_off_limits(tool, args):
     assert hermes_gate.decide(tool, args)["action"] == "block"
+
+
+@pytest.mark.parametrize("code", [
+    'new_tab("https://example.com")\nwait_for_load()\nprint(page_info())',
+    'print(js("document.title"))',
+    '# Click the "Next page" link\nclick_at_xy(10, 20)',
+    'scroll(1, 2)\nprint(capture_screenshot("/tmp/a.png"))',
+    'import time\ntime.sleep(1)\ngoto_url("https://news.example.org/borders")',
+])
+def test_ordinary_browsing_is_one_yes_for_the_job(code):
+    answer = hermes_gate.decide("browser_exec", {"code": code})
+    assert answer["rule_key"] == hermes_gate.BROWSER_JOB_KEY
+    assert answer["message"].startswith(hermes_gate.BROWSER_JOB_MARK)
+
+
+@pytest.mark.parametrize("code", [
+    '# Click the Send button\nclick_at_xy(1, 2)', '# Click Pay now\nclick_at_xy(1, 2)', '# Delete the draft\nclick_at_xy(1, 2)',
+    '# Post the comment\nclick_at_xy(1, 2)', '# Sign in\nfill_input("#u", "a")', 'fill_input("#password", "x")',
+    'click_at_xy(1, 2)', 'press_key("Enter")', 'type_text("hello\\n")', 'js("document.forms[0].submit()")',
+    'js("fetch(\'/x\', {method: \'POST\'})")', 'import os\nos.remove("a")', 'upload_file("#f", "/etc/hosts")',
+    'cdp("Input.dispatchMouseEvent")', 'capture_screenshot("/Users/a/.zshrc")', 'getattr(x, "a")', 'open("a","w")', '',
+])
+def test_risky_browser_steps_ask_on_their_own(code):
+    answer = hermes_gate.decide("browser_exec", {"code": code})
+    assert answer.get("rule_key") != hermes_gate.BROWSER_JOB_KEY
+    assert answer["action"] in {"approve", "block"}
+
+
+def test_other_browser_tools_and_commands_still_ask_each_time():
+    for tool, args in [("browser_cdp", {"method": "x"}), ("browser_vault", {}), ("terminal", {"command": "rm a"}),
+                       ("browser_exec", {"code": "print(1)", "local": True})]:
+        assert hermes_gate.decide(tool, args).get("rule_key") != hermes_gate.BROWSER_JOB_KEY

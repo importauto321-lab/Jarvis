@@ -203,3 +203,10 @@ def test_the_actual_command_is_always_shown():
     assert hermes.what_is_asked({"description": "delete in root path", "command": "rm /x/y"}) == "delete in root path: rm /x/y"
     assert hermes.what_is_asked({"description": "terminal: rm a", "command": "<terminal> (plugin approval rule)"}) == "terminal: rm a"
     assert hermes.what_is_asked({}) == "something it did not describe"
+
+
+def test_a_browsing_yes_covers_the_job_and_others_are_once(server):
+    url, seen, reply = server
+    reply["asks"] = [ask_card(1, hermes.BROWSER_JOB_MARK + "? First step: x"), ask_card(2, "browser_exec: click Pay")]
+    hermes.ask("x", url=url, key="k", approve=lambda w: True, sleep=lambda s: None)
+    assert [a["choice"] for a in seen["approvals"]] == ["session", "once"]
