@@ -1354,7 +1354,11 @@ const openaiJson = async (path, body) =>
   (await openaiFetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 
 async function openaiModel(wanted) {
-  if (!openaiModels) openaiModels = ((await (await openaiFetch("models", {}, 30000)).json()).data || []).map((m) => m.id);
+  if (!openaiModels) {
+    const list = (await (await openaiFetch("models", {}, 30000)).json())?.data;
+    if (!Array.isArray(list)) throw new Error("ChatGPT didn't list its models. Tell the user to try again later.");
+    openaiModels = list.map((m) => m.id);
+  }
   const found = wanted.find((name) => openaiModels.includes(name));
   if (!found) throw new Error("This OpenAI account doesn't offer the model needed for that.");
   return found;

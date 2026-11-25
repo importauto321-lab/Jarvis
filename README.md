@@ -184,7 +184,7 @@ Mac's built-in `say` voice if `pyttsx3` isn't installed.
 Add an OpenAI key under **Settings -> ChatGPT** for second opinions (including decisions about
 real money), double-checking, code, writing, math, new or edited pictures, and voice
 recordings. Jarvis says when he used it. Each use costs OpenAI credit. Whether something counts
-as a money decision is Claude's judgment, so say "check it with ChatGPT" when it matters.
+as a money decision is Claude's judgment (helped by a simple word check), so say "check it with ChatGPT" when it matters.
 
 ### Gemini jobs (web page)
 
